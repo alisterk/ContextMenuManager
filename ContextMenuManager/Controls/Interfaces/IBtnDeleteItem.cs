@@ -1,5 +1,5 @@
 ﻿using BluePointLilac.Controls;
-using BluePointLilac.Methods;
+using ContextMenuManager.Methods;
 using System.Windows.Forms;
 
 namespace ContextMenuManager.Controls.Interfaces
@@ -14,12 +14,11 @@ namespace ContextMenuManager.Controls.Interfaces
     {
         public DeleteButton(IBtnDeleteItem item) : base(AppImage.Delete)
         {
-            ((MyListItem)item).AddCtr(this);
+            MyListItem listItem = (MyListItem)item;
+            listItem.AddCtr(this);
             this.MouseDown += (sender, e) =>
             {
-                if(MessageBoxEx.Show(AppString.MessageBox.ConfirmDelete,
-                MessageBoxButtons.YesNo) == DialogResult.Yes)
-                    item.DeleteMe();
+                if(AppMessageBox.Show(AppString.Message.ConfirmDelete, MessageBoxButtons.YesNo) == DialogResult.Yes) item.DeleteMe();
             };
         }
     }

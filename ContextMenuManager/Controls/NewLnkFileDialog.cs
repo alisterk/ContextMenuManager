@@ -1,4 +1,5 @@
 ﻿using BluePointLilac.Methods;
+using ContextMenuManager.Methods;
 using System;
 using System.IO;
 using System.Windows.Forms;
@@ -18,6 +19,7 @@ namespace ContextMenuManager.Controls
             using(NewLnkForm frm = new NewLnkForm())
             {
                 frm.FileFilter = this.FileFilter;
+                frm.TopMost = AppConfig.TopMost;
                 bool flag = frm.ShowDialog() == DialogResult.OK;
                 if(flag)
                 {
@@ -49,7 +51,7 @@ namespace ContextMenuManager.Controls
             {
                 base.InitializeComponents();
                 this.Controls.AddRange(new Control[] { rdoFile, rdoFolder });
-                rdoFile.Top = rdoFolder.Top = btnOk.Top;
+                rdoFile.Top = rdoFolder.Top = btnOK.Top + (btnOK.Height - rdoFile.Height) / 2;
                 rdoFile.Left = lblCommand.Left;
                 rdoFolder.Left = rdoFile.Right + 20.DpiZoom();
 
@@ -59,23 +61,23 @@ namespace ContextMenuManager.Controls
                     else BrowseFolder();
                 };
 
-                btnOk.Click += (sender, e) =>
+                btnOK.Click += (sender, e) =>
                 {
                     if(ItemText.IsNullOrWhiteSpace())
                     {
-                        MessageBoxEx.Show(AppString.MessageBox.TextCannotBeEmpty);
+                        AppMessageBox.Show(AppString.Message.TextCannotBeEmpty);
                     }
                     else if(ItemFilePath.IsNullOrWhiteSpace())
                     {
-                        MessageBoxEx.Show(AppString.MessageBox.CommandCannotBeEmpty);
+                        AppMessageBox.Show(AppString.Message.CommandCannotBeEmpty);
                     }
                     else if(rdoFile.Checked && !ObjectPath.GetFullFilePath(ItemFilePath, out _))
                     {
-                        MessageBoxEx.Show(AppString.MessageBox.FileNotExists);
+                        AppMessageBox.Show(AppString.Message.FileNotExists);
                     }
                     else if(rdoFolder.Checked && !Directory.Exists(ItemFilePath))
                     {
-                        MessageBoxEx.Show(AppString.MessageBox.FolderNotExists);
+                        AppMessageBox.Show(AppString.Message.FolderNotExists);
                     }
                     else DialogResult = DialogResult.OK;
                 };
@@ -84,7 +86,7 @@ namespace ContextMenuManager.Controls
                 {
                     if(Path.GetExtension(ItemFilePath).ToLower() == ".lnk")
                     {
-                        using(WshShortcut shortcut = new WshShortcut(ItemFilePath))
+                        using(ShellLink shortcut = new ShellLink(ItemFilePath))
                         {
                             if(File.Exists(shortcut.TargetPath))
                             {
@@ -108,11 +110,12 @@ namespace ContextMenuManager.Controls
                         string extension = Path.GetExtension(dlg.FileName).ToLower();
                         if(extension == ".lnk")
                         {
-                            using(WshShortcut shortcut = new WshShortcut(dlg.FileName))
+                            using(ShellLink shortcut = new ShellLink(dlg.FileName))
                             {
                                 if(File.Exists(shortcut.TargetPath))
                                 {
                                     ItemFilePath = shortcut.TargetPath;
+                                    Arguments = shortcut.Arguments;
                                 }
                             }
                         }

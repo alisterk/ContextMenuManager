@@ -1,5 +1,6 @@
 ﻿using BluePointLilac.Controls;
 using BluePointLilac.Methods;
+using ContextMenuManager.Methods;
 using System;
 
 namespace ContextMenuManager.Controls
@@ -12,13 +13,13 @@ namespace ContextMenuManager.Controls
         {
             this.Text = text;
             this.Image = AppImage.NewItem;
-            this.SetNoClickEvent();
             this.AddCtr(BtnAddNewItem);
-            MyToolTip.SetToolTip(BtnAddNewItem, text);
-            BtnAddNewItem.MouseDown += (sender, e) => AddNewItem?.Invoke(null, null);
+            ToolTipBox.SetToolTip(BtnAddNewItem, text);
+            BtnAddNewItem.MouseDown += (sender, e) => AddNewItem?.Invoke();
+            this.MouseDoubleClick += (sender, e) => AddNewItem?.Invoke();
 
         }
-        public event EventHandler AddNewItem;
+        public Action AddNewItem;
         readonly PictureButton BtnAddNewItem = new PictureButton(AppImage.AddNewItem);
     }
 }

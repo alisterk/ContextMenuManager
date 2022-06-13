@@ -1,4 +1,5 @@
 ﻿using BluePointLilac.Methods;
+using ContextMenuManager.Methods;
 using System;
 using System.IO;
 using System.Windows.Forms;
@@ -22,6 +23,7 @@ namespace ContextMenuManager.Controls
                 ShellPath = this.ShellPath
             })
             {
+                frm.TopMost = AppConfig.TopMost;
                 bool flag = frm.ShowDialog() == DialogResult.OK;
                 if(flag) this.NewItemRegPath = frm.NewItemRegPath;
                 return flag;
@@ -49,6 +51,7 @@ namespace ContextMenuManager.Controls
 
             static readonly string[] DirScenePaths = {
                 ShellList.MENUPATH_DIRECTORY,
+                ShellList.MENUPATH_BACKGROUND,
                 $@"{ShellList.SYSFILEASSPATH}\Directory."
             };
             static readonly string[] FileObjectsScenePaths = {
@@ -64,21 +67,19 @@ namespace ContextMenuManager.Controls
             {
                 base.InitializeComponents();
                 this.Controls.AddRange(new Control[] { rdoSingle, rdoMulti, chkSE });
-                rdoSingle.Top = rdoMulti.Top = btnOk.Top;
+                rdoSingle.Top = rdoMulti.Top = chkSE.Top = btnOK.Top + (btnOK.Height - rdoSingle.Height) / 2;
                 rdoSingle.Left = lblCommand.Left;
                 rdoMulti.Left = rdoSingle.Right + 20.DpiZoom();
-                chkSE.Top = txtArguments.Top + (txtArguments.Height - chkSE.Height) / 2;
-                this.Resize += (sender, e) => chkSE.Left = txtArguments.Right + 20.DpiZoom();
-                this.OnResize(null);
+                chkSE.Left = rdoMulti.Right + 20.DpiZoom();
 
                 rdoMulti.CheckedChanged += (sender, e) =>
                 {
                     if(rdoMulti.Checked)
                     {
                         chkSE.Checked = false;
-                        if(WindowsOsVersion.IsEqualVista)
+                        if(WinOsVersion.Current == WinOsVersion.Vista)
                         {
-                            MessageBoxEx.Show(AppString.MessageBox.VistaUnsupportedMulti);
+                            AppMessageBox.Show(AppString.Message.VistaUnsupportedMulti);
                             rdoSingle.Checked = true;
                             return;
                         }
@@ -89,11 +90,11 @@ namespace ContextMenuManager.Controls
 
                 btnBrowse.Click += (sender, e) => BrowseFile();
 
-                btnOk.Click += (sender, e) =>
+                btnOK.Click += (sender, e) =>
                 {
                     if(txtText.Text.IsNullOrWhiteSpace())
                     {
-                        MessageBoxEx.Show(AppString.MessageBox.TextCannotBeEmpty);
+                        AppMessageBox.Show(AppString.Message.TextCannotBeEmpty);
                     }
                     else
                     {
@@ -107,25 +108,33 @@ namespace ContextMenuManager.Controls
             {
                 using(OpenFileDialog dlg = new OpenFileDialog())
                 {
-                    dlg.Filter = $"{AppString.Dialog.Program}|*.exe;*.bat;*.cmd;*.vbs;*.vbe;*.js;*.jse;*.wsf";
+                    dlg.DereferenceLinks = false;
+                    dlg.Filter = $"{AppString.Dialog.Program}|*.exe|{AppString.Dialog.AllFiles}|*";
                     if(dlg.ShowDialog() != DialogResult.OK) return;
-                    Arguments = string.Empty;
-                    ItemText = Path.GetFileNameWithoutExtension(dlg.FileName);
-                    string extension = Path.GetExtension(dlg.FileName).ToLower();
-                    switch(extension)
+                    string filePath = dlg.FileName;
+                    string arguments = "";
+                    ItemText = Path.GetFileNameWithoutExtension(filePath);
+                    string extension = Path.GetExtension(filePath).ToLower();
+                    if(extension == ".lnk")
                     {
-                        case ".vbs":
-                        case ".vbe":
-                        case ".js":
-                        case ".jse":
-                        case ".wsf":
-                            chkSE.Checked = true;
-                            ItemFilePath = "wscript.exe";
-                            Arguments = dlg.FileName;
-                            break;
-                        default:
-                            ItemFilePath = dlg.FileName;
-                            break;
+                        using(ShellLink shellLink = new ShellLink(filePath))
+                        {
+                            filePath = shellLink.TargetPath;
+                            arguments = shellLink.Arguments;
+                            extension = Path.GetExtension(filePath);
+                        }
+                    }
+                    string exePath = FileExtension.GetExtentionInfo(FileExtension.AssocStr.Executable, extension);
+                    if(File.Exists(exePath))
+                    {
+                        ItemFilePath = exePath;
+                        Arguments = filePath;
+                        if(!arguments.IsNullOrWhiteSpace()) Arguments += " " + arguments;
+                    }
+                    else
+                    {
+                        ItemFilePath = filePath;
+                        Arguments = arguments;
                     }
                     if(Array.FindIndex(DirScenePaths, path
                        => ScenePath.StartsWith(path, StringComparison.OrdinalIgnoreCase)) != -1)

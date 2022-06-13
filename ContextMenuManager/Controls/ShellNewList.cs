@@ -1,13 +1,16 @@
 ﻿using BluePointLilac.Controls;
 using BluePointLilac.Methods;
 using ContextMenuManager.Controls.Interfaces;
+using ContextMenuManager.Methods;
 using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Windows.Forms;
+using System.Xml;
 
 namespace ContextMenuManager.Controls
 {
@@ -34,7 +37,7 @@ namespace ContextMenuManager.Controls
             using(RegistryKey root = Registry.ClassesRoot)
             {
                 extensions.AddRange(Array.FindAll(root.GetSubKeyNames(), keyName => keyName.StartsWith(".")));
-                if(WindowsOsVersion.IsBefore10) extensions.Add("Briefcase");//公文包(Win10没有)
+                if(WinOsVersion.Current < WinOsVersion.Win10) extensions.Add("Briefcase");//公文包(Win10没有)
                 this.LoadItems(extensions);
             }
         }
@@ -63,7 +66,7 @@ namespace ContextMenuManager.Controls
                     using(RegistryKey extKey = root.OpenSubKey(extension))
                     {
                         string defalutOpenMode = extKey?.GetValue("")?.ToString();
-                        if(string.IsNullOrEmpty(defalutOpenMode)) continue;
+                        if(string.IsNullOrEmpty(defalutOpenMode) || defalutOpenMode.Length > 255) continue;
                         using(RegistryKey openModeKey = root.OpenSubKey(defalutOpenMode))
                         {
                             if(openModeKey == null) continue;
@@ -134,16 +137,21 @@ namespace ContextMenuManager.Controls
         {
             NewItem newItem = new NewItem();
             this.AddItem(newItem);
-            newItem.AddNewItem += (sender, e) =>
+            newItem.AddNewItem += () =>
             {
                 using(FileExtensionDialog dlg = new FileExtensionDialog())
                 {
                     if(dlg.ShowDialog() != DialogResult.OK) return;
                     string extension = dlg.Extension;
+                    if(extension == ".") return;
                     string openMode = FileExtension.GetOpenMode(extension);
                     if(string.IsNullOrEmpty(openMode))
                     {
-                        MessageBoxEx.Show(AppString.MessageBox.NoOpenModeExtension);
+                        if(AppMessageBox.Show(AppString.Message.NoOpenModeExtension,
+                            MessageBoxButtons.OKCancel) == DialogResult.OK)
+                        {
+                            ExternalProgram.ShowOpenWithDialog(extension);
+                        }
                         return;
                     }
                     foreach(Control ctr in this.Controls)
@@ -152,132 +160,162 @@ namespace ContextMenuManager.Controls
                         {
                             if(item.Extension.Equals(extension, StringComparison.OrdinalIgnoreCase))
                             {
-                                MessageBoxEx.Show(AppString.MessageBox.HasBeenAdded);
+                                AppMessageBox.Show(AppString.Message.HasBeenAdded);
                                 return;
                             }
                         }
                     }
 
-                    using(RegistryKey exKey = Registry.ClassesRoot.OpenSubKey(extension, true))
+                    using(RegistryKey root = Registry.ClassesRoot)
+                    using(RegistryKey exKey = root.OpenSubKey(extension, true))
                     using(RegistryKey snKey = exKey.CreateSubKey("ShellNew", true))
                     {
                         string defaultOpenMode = exKey.GetValue("")?.ToString();
-                        if(string.IsNullOrEmpty(defaultOpenMode))
-                        {
-                            exKey.SetValue("", openMode);
-                        }
+                        if(string.IsNullOrEmpty(defaultOpenMode)) exKey.SetValue("", openMode);
 
-                        snKey.SetValue("NullFile", string.Empty);
+                        byte[] bytes = GetWebShellNewData(extension);
+                        if(bytes != null) snKey.SetValue("Data", bytes, RegistryValueKind.Binary);
+                        else snKey.SetValue("NullFile", "", RegistryValueKind.String);
+
                         ShellNewItem item = new ShellNewItem(this, snKey.Name);
                         this.AddItem(item);
                         item.Focus();
                         if(item.ItemText.IsNullOrWhiteSpace())
                         {
-                            item.ItemText = $"{extension.Substring(1)} file";
+                            item.ItemText = FileExtension.GetExtentionInfo(FileExtension.AssocStr.FriendlyDocName, extension);
                         }
                         if(ShellNewLockItem.IsLocked) this.SaveSorting();
                     }
                 }
             };
         }
-    }
 
-    sealed class ShellNewLockItem : MyListItem, IChkVisibleItem, IBtnShowMenuItem, ITsiWebSearchItem
-    {
-        public ShellNewLockItem(ShellNewList list)
+        private static byte[] GetWebShellNewData(string extension)
         {
-            this.Owner = list;
-            this.Image = AppImage.Lock;
-            this.Text = AppString.Other.LockNewMenu;
-            this.SetNoClickEvent();
-            BtnShowMenu = new MenuButton(this);
-            ChkVisible = new VisibleCheckBox(this) { Checked = IsLocked };
-            MyToolTip.SetToolTip(ChkVisible, AppString.Tip.LockNewMenu);
-            TsiSearch = new WebSearchMenuItem(this);
-            this.ContextMenuStrip = new ContextMenuStrip();
-            this.ContextMenuStrip.Items.Add(TsiSearch);
-        }
-
-        public MenuButton BtnShowMenu { get; set; }
-        public WebSearchMenuItem TsiSearch { get; set; }
-        public VisibleCheckBox ChkVisible { get; set; }
-        public ShellNewList Owner { get; private set; }
-
-        public bool ItemVisible
-        {
-            get => IsLocked;
-            set
+            string apiUrl = AppConfig.RequestUseGithub ? AppConfig.GithubShellNewApi : AppConfig.GiteeShellNewApi;
+            using(UAWebClient client = new UAWebClient())
             {
-                if(value) Owner.SaveSorting();
-                else UnLock();
-                foreach(Control ctr in Owner.Controls)
+                XmlDocument doc = client.GetWebJsonToXml(apiUrl);
+                if(doc == null) return null;
+                foreach(XmlNode node in doc.FirstChild.ChildNodes)
                 {
-                    if(ctr is ShellNewItem item)
+                    XmlNode nameXN = node.SelectSingleNode("name");
+                    string str = Path.GetExtension(nameXN.InnerText);
+                    if(string.Equals(str, extension, StringComparison.OrdinalIgnoreCase))
                     {
-                        item.SetSortabled(value);
+                        try
+                        {
+                            string dirUrl = AppConfig.RequestUseGithub ? AppConfig.GithubShellNewRawDir : AppConfig.GiteeShellNewRawDir;
+                            string fileUrl = $"{dirUrl}/{nameXN.InnerText}";
+                            return client.DownloadData(fileUrl);
+                        }
+                        catch { return null; }
                     }
                 }
+                return null;
             }
         }
 
-        public string SearchText => Text;
-
-        public static bool IsLocked
+        public sealed class ShellNewLockItem : MyListItem, IChkVisibleItem, IBtnShowMenuItem, ITsiWebSearchItem, ITsiRegPathItem
         {
-            get
+            public ShellNewLockItem(ShellNewList list)
             {
-                using(RegistryKey key = RegistryEx.GetRegistryKey(ShellNewList.ShellNewPath))
+                this.Owner = list;
+                this.Image = AppImage.Lock;
+                this.Text = AppString.Other.LockNewMenu;
+                BtnShowMenu = new MenuButton(this);
+                ChkVisible = new VisibleCheckBox(this) { Checked = IsLocked };
+                ToolTipBox.SetToolTip(ChkVisible, AppString.Tip.LockNewMenu);
+                TsiSearch = new WebSearchMenuItem(this);
+                TsiRegLocation = new RegLocationMenuItem(this);
+                this.ContextMenuStrip.Items.AddRange(new ToolStripItem[]
+                    { TsiSearch, new ToolStripSeparator(), TsiRegLocation });
+            }
+
+            public MenuButton BtnShowMenu { get; set; }
+            public WebSearchMenuItem TsiSearch { get; set; }
+            public RegLocationMenuItem TsiRegLocation { get; set; }
+            public VisibleCheckBox ChkVisible { get; set; }
+            public ShellNewList Owner { get; private set; }
+
+            public bool ItemVisible
+            {
+                get => IsLocked;
+                set
+                {
+                    if(value) Owner.SaveSorting();
+                    else UnLock();
+                    foreach(Control ctr in Owner.Controls)
+                    {
+                        if(ctr is ShellNewItem item)
+                        {
+                            item.SetSortabled(value);
+                        }
+                    }
+                }
+            }
+
+            public string SearchText => Text;
+            public string RegPath => ShellNewPath;
+            public string ValueName => "Classes";
+
+            public static bool IsLocked
+            {
+                get
+                {
+                    using(RegistryKey key = RegistryEx.GetRegistryKey(ShellNewPath))
+                    {
+                        RegistrySecurity rs = key.GetAccessControl();
+                        foreach(RegistryAccessRule rar in rs.GetAccessRules(true, true, typeof(NTAccount)))
+                        {
+                            if(rar.AccessControlType.ToString().Equals("Deny", StringComparison.OrdinalIgnoreCase))
+                            {
+                                if(rar.IdentityReference.ToString().Equals("Everyone", StringComparison.OrdinalIgnoreCase)) return true;
+                            }
+                        }
+                    }
+                    return false;
+                }
+            }
+
+            public static void Lock()
+            {
+                using(RegistryKey key = RegistryEx.GetRegistryKey(ShellNewPath, RegistryKeyPermissionCheck.ReadWriteSubTree, RegistryRights.ChangePermissions))
+                {
+                    RegistrySecurity rs = new RegistrySecurity();
+                    RegistryAccessRule rar = new RegistryAccessRule("Everyone", RegistryRights.Delete | RegistryRights.WriteKey, AccessControlType.Deny);
+                    rs.AddAccessRule(rar);
+                    key.SetAccessControl(rs);
+                }
+            }
+
+            public static void UnLock()
+            {
+                using(RegistryKey key = RegistryEx.GetRegistryKey(ShellNewPath, RegistryKeyPermissionCheck.ReadWriteSubTree, RegistryRights.ChangePermissions))
                 {
                     RegistrySecurity rs = key.GetAccessControl();
                     foreach(RegistryAccessRule rar in rs.GetAccessRules(true, true, typeof(NTAccount)))
                     {
                         if(rar.AccessControlType.ToString().Equals("Deny", StringComparison.OrdinalIgnoreCase))
                         {
-                            if(rar.IdentityReference.ToString().Equals("Everyone", StringComparison.OrdinalIgnoreCase)) return true;
+                            if(rar.IdentityReference.ToString().Equals("Everyone", StringComparison.OrdinalIgnoreCase))
+                            {
+                                rs.RemoveAccessRule(rar);
+                            }
                         }
                     }
+                    key.SetAccessControl(rs);
                 }
-                return false;
             }
         }
 
-        public static void Lock()
+        public sealed class ShellNewSeparator : MyListItem
         {
-            using(RegistryKey key = RegistryEx.GetRegistryKey(ShellNewList.ShellNewPath, RegistryKeyPermissionCheck.ReadWriteSubTree, RegistryRights.ChangePermissions))
+            public ShellNewSeparator()
             {
-                RegistrySecurity rs = new RegistrySecurity();
-                RegistryAccessRule rar = new RegistryAccessRule("Everyone", RegistryRights.Delete | RegistryRights.WriteKey, AccessControlType.Deny);
-                rs.AddAccessRule(rar);
-                key.SetAccessControl(rs);
+                this.Text = AppString.Other.Separator;
+                this.HasImage = false;
             }
-        }
-
-        public static void UnLock()
-        {
-            using(RegistryKey key = RegistryEx.GetRegistryKey(ShellNewList.ShellNewPath, RegistryKeyPermissionCheck.ReadWriteSubTree, RegistryRights.ChangePermissions))
-            {
-                RegistrySecurity rs = key.GetAccessControl();
-                foreach(RegistryAccessRule rar in rs.GetAccessRules(true, true, typeof(NTAccount)))
-                {
-                    if(rar.AccessControlType.ToString().Equals("Deny", StringComparison.OrdinalIgnoreCase))
-                    {
-                        if(rar.IdentityReference.ToString().Equals("Everyone", StringComparison.OrdinalIgnoreCase))
-                        {
-                            rs.RemoveAccessRule(rar);
-                        }
-                    }
-                }
-                key.SetAccessControl(rs);
-            }
-        }
-    }
-
-    sealed class ShellNewSeparator : MyListItem
-    {
-        public ShellNewSeparator()
-        {
-            this.Text = AppString.Other.Separator;
-            this.HasImage = false;
         }
     }
 }

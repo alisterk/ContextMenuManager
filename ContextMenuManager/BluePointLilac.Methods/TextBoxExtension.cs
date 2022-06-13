@@ -14,7 +14,7 @@ namespace BluePointLilac.Methods
                 float size = box.Font.Size;
                 if(size < 8F && e.Delta < 0) return;
                 if(size > 40F && e.Delta > 0) return;
-                box.Font = new Font(box.Font.FontFamily, size + (e.Delta > 0 ? 1 : -1));
+                box.Font = new Font(box.Font.FontFamily, size + (e.Delta > 0 ? 1F : -1F));
             };
         }
 
@@ -54,6 +54,7 @@ namespace BluePointLilac.Methods
             box.ClientSizeChanged += (sender, e) => SetScrollVisible();
         }
 
+        /// <summary>TextBox只读时可以使用Ctrl+A全选快捷键</summary>
         public static void CanSelectAllWhenReadOnly(this TextBox box)
         {
             box.KeyDown += (sender, e) =>

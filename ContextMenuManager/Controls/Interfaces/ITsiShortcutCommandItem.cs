@@ -1,5 +1,6 @@
 ﻿using BluePointLilac.Controls;
 using BluePointLilac.Methods;
+using ContextMenuManager.Methods;
 using System;
 using System.Drawing;
 using System.Windows.Forms;
@@ -8,7 +9,7 @@ namespace ContextMenuManager.Controls.Interfaces
 {
     interface ITsiShortcutCommandItem
     {
-        WshShortcut Shortcut { get; }
+        ShellLink ShellLink { get; }
         ShortcutCommandMenuItem TsiChangeCommand { get; set; }
         ContextMenuStrip ContextMenuStrip { get; set; }
     }
@@ -19,20 +20,20 @@ namespace ContextMenuManager.Controls.Interfaces
         {
             item.ContextMenuStrip.Opening += (sender, e) =>
             {
-                this.Visible = !string.IsNullOrEmpty(item.Shortcut?.TargetPath);
+                this.Visible = !string.IsNullOrEmpty(item.ShellLink?.TargetPath);
             };
         }
 
-        public bool ChangeCommand(WshShortcut shortcut)
+        public bool ChangeCommand(ShellLink shellLink)
         {
             using(CommandDialog dlg = new CommandDialog())
             {
-                dlg.Command = shortcut.TargetPath;
-                dlg.Arguments = shortcut.Arguments;
+                dlg.Command = shellLink.TargetPath;
+                dlg.Arguments = shellLink.Arguments;
                 if(dlg.ShowDialog() != DialogResult.OK) return false;
-                shortcut.TargetPath = dlg.Command;
-                shortcut.Arguments = dlg.Arguments;
-                shortcut.Save();
+                shellLink.TargetPath = dlg.Command;
+                shellLink.Arguments = dlg.Arguments;
+                shellLink.Save();
                 return true;
             }
         }
@@ -50,6 +51,7 @@ namespace ContextMenuManager.Controls.Interfaces
                 {
                     frm.Command = this.Command;
                     frm.Arguments = this.Arguments;
+                    frm.TopMost = AppConfig.TopMost;
                     bool flag = frm.ShowDialog() == DialogResult.OK;
                     if(flag)
                     {
@@ -60,11 +62,11 @@ namespace ContextMenuManager.Controls.Interfaces
                 }
             }
 
-            sealed class CommandForm : ResizbleForm
+            sealed class CommandForm : ResizeLimitedForm
             {
                 public CommandForm()
                 {
-                    this.AcceptButton = btnOk;
+                    this.AcceptButton = btnOK;
                     this.CancelButton = btnCancel;
                     this.VerticalResizable = false;
                     this.Font = SystemFonts.MessageBoxFont;
@@ -99,31 +101,31 @@ namespace ContextMenuManager.Controls.Interfaces
                 };
                 readonly TextBox txtCommand = new TextBox();
                 readonly TextBox txtArguments = new TextBox();
-                readonly Button btnOk = new Button
+                readonly Button btnOK = new Button
                 {
                     DialogResult = DialogResult.OK,
-                    Text = AppString.Dialog.Ok,
+                    Text = ResourceString.OK,
                     AutoSize = true
                 };
                 readonly Button btnCancel = new Button
                 {
                     DialogResult = DialogResult.Cancel,
-                    Text = AppString.Dialog.Cancel,
+                    Text = ResourceString.Cancel,
                     AutoSize = true
                 };
 
                 private void InitializeComponents()
                 {
-                    this.Controls.AddRange(new Control[] { lblCommand, lblArguments, txtCommand, txtArguments, btnOk, btnCancel });
+                    this.Controls.AddRange(new Control[] { lblCommand, lblArguments, txtCommand, txtArguments, btnOK, btnCancel });
                     int a = 20.DpiZoom();
                     lblArguments.Left = lblCommand.Left = lblCommand.Top = txtCommand.Top = a;
                     lblArguments.Top = txtArguments.Top = txtCommand.Bottom + a;
-                    btnOk.Top = btnCancel.Top = txtArguments.Bottom + a;
+                    btnOK.Top = btnCancel.Top = txtArguments.Bottom + a;
                     int b = Math.Max(lblCommand.Width, lblArguments.Width) + 3 * a;
-                    this.ClientSize = new Size(250.DpiZoom() + b, btnOk.Bottom + a);
-                    btnOk.Anchor = btnCancel.Anchor = AnchorStyles.Right | AnchorStyles.Top;
+                    this.ClientSize = new Size(250.DpiZoom() + b, btnOK.Bottom + a);
+                    btnOK.Anchor = btnCancel.Anchor = AnchorStyles.Right | AnchorStyles.Top;
                     btnCancel.Left = this.ClientSize.Width - btnCancel.Width - a;
-                    btnOk.Left = btnCancel.Left - btnOk.Width - a;
+                    btnOK.Left = btnCancel.Left - btnOK.Width - a;
                     this.Resize += (sender, e) =>
                     {
                         txtArguments.Width = txtCommand.Width = this.ClientSize.Width - b;

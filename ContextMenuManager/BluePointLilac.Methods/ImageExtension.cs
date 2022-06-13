@@ -22,16 +22,17 @@ namespace BluePointLilac.Methods
 
         public static Image ResizeImage(this Image image, int width, int height)
         {
+            //return image.GetThumbnailImage(width, height, null, System.IntPtr.Zero);//质量稍微低一点
             if(image.Width == width && image.Height == height) return image;
             Bitmap destImage = new Bitmap(width, height);
             destImage.SetResolution(image.HorizontalResolution, image.VerticalResolution);
             using(Graphics g = Graphics.FromImage(destImage))
             {
                 g.CompositingMode = CompositingMode.SourceCopy;
-                g.CompositingQuality = CompositingQuality.HighQuality;
                 g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                g.SmoothingMode = SmoothingMode.HighQuality;
+                g.CompositingQuality = CompositingQuality.HighQuality;
                 g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                g.SmoothingMode = SmoothingMode.HighQuality;
 
                 using(ImageAttributes attributes = new ImageAttributes())
                 {

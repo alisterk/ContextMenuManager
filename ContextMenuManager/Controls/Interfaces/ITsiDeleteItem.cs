@@ -1,4 +1,6 @@
-﻿using BluePointLilac.Methods;
+﻿using BluePointLilac.Controls;
+using BluePointLilac.Methods;
+using ContextMenuManager.Methods;
 using System;
 using System.IO;
 using System.Windows.Forms;
@@ -25,17 +27,33 @@ namespace ContextMenuManager.Controls.Interfaces
             {
                 if(item is ITsiRegDeleteItem regItem && AppConfig.AutoBackup)
                 {
-                    if(MessageBoxEx.Show(AppString.MessageBox.DeleteButCanRestore,
+                    if(AppMessageBox.Show(AppString.Message.DeleteButCanRestore,
                      MessageBoxButtons.YesNo) != DialogResult.Yes) return;
                     string date = DateTime.Today.ToString("yyyy-MM-dd");
                     string time = DateTime.Now.ToString("HH.mm.ss");
-                    string filePath = $@"{AppConfig.BackupDir}\{date}\{regItem.Text}-{time}.reg";
+                    string filePath = $@"{AppConfig.BackupDir}\{date}\{regItem.Text} - {time}.reg";
                     Directory.CreateDirectory(Path.GetDirectoryName(filePath));
-                    RegistryEx.Export(regItem.RegPath, filePath);
+                    ExternalProgram.ExportRegistry(regItem.RegPath, filePath);
                 }
-                else if(MessageBoxEx.Show(AppString.MessageBox.ConfirmDeletePermanently,
+                else if(AppMessageBox.Show(AppString.Message.ConfirmDeletePermanently,
                      MessageBoxButtons.YesNo) != DialogResult.Yes) return;
-                item.DeleteMe();
+
+                MyListItem listItem = (MyListItem)item;
+                MyList list = (MyList)listItem.Parent;
+                int index = list.GetItemIndex(listItem);
+                if(index == list.Controls.Count - 1) index--;
+                try
+                {
+                    item.DeleteMe();
+                }
+                catch
+                {
+                    AppMessageBox.Show(AppString.Message.AuthorityProtection);
+                    return;
+                }
+                list.Controls.Remove(listItem);
+                list.Controls[index].Focus();
+                listItem.Dispose();
             };
         }
     }

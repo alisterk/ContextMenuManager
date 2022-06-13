@@ -1,48 +1,50 @@
-﻿using System;
+﻿using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 
 namespace BluePointLilac.Methods
 {
-    /// 获取文本文件编码类型
-    /// 代码主要为转载，仅做简单改动
-    /// 代码作者：Napoléon
-    /// 代码原文：https://www.cnblogs.com/guyun/p/4262587.html
+    /* 获取文本文件编码类型
+     * 代码参考：https://www.cnblogs.com/guyun/p/4262587.html (Napoléon)*/
     public static class EncodingType
     {
-        /// <summary>给定文件的路径，读取文件的二进制数据，判断文件的编码类型</summary> 
+        /// <summary>各种带BOM的编码BOM值</summary>
+        private static readonly Dictionary<byte[], Encoding> EncodingBomBytes = new Dictionary<byte[], Encoding>
+        {
+            { new byte[] { 0xEF, 0xBB, 0xBF }, Encoding.UTF8 },                         //UTF-8         EF BB BF
+            { new byte[] { 0xFF, 0xFE, 0x00, 0x00 }, Encoding.UTF32 },                  //UTF-32LE      FF FE 00 00
+            { new byte[] { 0xFF, 0xFE }, Encoding.Unicode },                            //UTF-16LE      FF FE
+            { new byte[] { 0xFE, 0xFF }, Encoding.BigEndianUnicode },                   //UTF-16BE      FE FF
+            { new byte[] { 0x2B, 0x2F, 0x76 }, Encoding.UTF7 },                         //UTF-7         2B 2F 76
+            { new byte[] { 0x00, 0x00, 0xFE, 0xFF }, new UTF32Encoding(true, true) },   //UTF-32BE      00 00 FE FF
+        };
+
+        /// <summary>获取给定的文件的编码类型</summary> 
         /// <param name=“filePath“>文件路径</param> 
         /// <returns>文件的编码类型</returns> 
         public static Encoding GetType(string filePath)
         {
-            using(FileStream fs = new FileStream(filePath, FileMode.Open, FileAccess.Read))
-                return GetType(fs);
-        }
-
-        /// <summary> 通过给定的文件流，判断文件的编码类型</summary>
-        /// <param name=“fs“>文件流</param> 
-        /// <returns>文件的编码类型</returns> 
-        public static Encoding GetType(FileStream fs)
-        {
-            byte[] ss;
-            int.TryParse(fs.Length.ToString(), out int i);
-            using(BinaryReader reader = new BinaryReader(fs, Encoding.Default))
-                ss = reader.ReadBytes(i);
-            if(IsUTF8Bytes(ss)) return Encoding.UTF8;
-            if(ss[0] == 0xEF && ss[1] == 0xBB && ss[2] == 0xBF) return Encoding.UTF8;//带BOM 
-            if(ss[0] == 0xFE && ss[1] == 0xFF) return Encoding.BigEndianUnicode;     //UTF-16BE
-            if(ss[0] == 0xFF && ss[1] == 0xFE) return Encoding.Unicode;              //UTF-16LE
+            byte[] fs = File.ReadAllBytes(filePath);
+            foreach(var kv in EncodingBomBytes)
+            {
+                if(fs.Length < kv.Key.Length) continue;
+                int i = -1;
+                bool flag = kv.Key.All(s => { i++; return s == fs[i]; });
+                if(flag) return kv.Value;
+            }
+            if(IsUTF8Bytes(fs)) return Encoding.UTF8; //不带BOM的UTF-8
             return Encoding.Default;
         }
 
         /// <summary>判断是否是不带 BOM 的 UTF8 格式</summary> 
-        /// <param name=“data“></param> 
-        private static bool IsUTF8Bytes(byte[] data)
+        /// <param name=“bytes“></param> 
+        private static bool IsUTF8Bytes(byte[] bytes)
         {
             int count = 1; //计算当前正分析的字符应还有的字节数 
-            for(int i = 0; i < data.Length; i++)
+            for(int i = 0; i < bytes.Length; i++)
             {
-                byte curByte = data[i];//当前分析的字节. 
+                byte curByte = bytes[i];//当前分析的字节. 
                 if(count == 1)
                 {
                     if(curByte >= 0x80)
@@ -60,7 +62,7 @@ namespace BluePointLilac.Methods
                     else count--;
                 }
             }
-            if(count > 1) throw new Exception("非预期的byte格式");
+            //if(count > 1) throw new Exception("非预期的byte格式");
             return true;
         }
     }

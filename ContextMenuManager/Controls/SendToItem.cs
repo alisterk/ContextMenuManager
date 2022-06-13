@@ -1,6 +1,7 @@
 ﻿using BluePointLilac.Controls;
 using BluePointLilac.Methods;
 using ContextMenuManager.Controls.Interfaces;
+using ContextMenuManager.Methods;
 using Microsoft.Win32;
 using System.Drawing;
 using System.IO;
@@ -24,24 +25,24 @@ namespace ContextMenuManager.Controls
             set
             {
                 filePath = value;
-                if(IsShortcut) this.Shortcut = new WshShortcut(value);
+                if(IsShortcut) this.ShellLink = new ShellLink(value);
                 this.Text = this.ItemText;
-                this.Image = this.ItemIcon.ToBitmap();
-                ChkVisible.Checked = this.ItemVisible;
+                this.Image = this.ItemImage;
             }
         }
 
-        public WshShortcut Shortcut { get; private set; }
+        public ShellLink ShellLink { get; private set; }
         private string FileExtension => Path.GetExtension(FilePath);
         private bool IsShortcut => FileExtension.ToLower() == ".lnk";
         public string SearchText => $"{AppString.SideBar.SendTo} {Text}";
+        private Image ItemImage => ItemIcon?.ToBitmap() ?? AppImage.NotFound;
 
         public string ItemFilePath
         {
             get
             {
                 string path = null;
-                if(IsShortcut) path = Shortcut.TargetPath;
+                if(IsShortcut) path = ShellLink.TargetPath;
                 else
                 {
                     using(RegistryKey root = Registry.ClassesRoot)
@@ -104,7 +105,7 @@ namespace ContextMenuManager.Controls
                     if(File.Exists(path)) icon = ResourceIcon.GetExtensionIcon(path);
                     else if(Directory.Exists(path)) icon = ResourceIcon.GetFolderIcon(path);
                 }
-                else icon = ResourceIcon.GetExtensionIcon(FileExtension);
+                if(icon == null) icon = ResourceIcon.GetExtensionIcon(FileExtension);
                 return icon;
             }
         }
@@ -116,8 +117,11 @@ namespace ContextMenuManager.Controls
                 string location = null;
                 if(IsShortcut)
                 {
-                    location = Shortcut.IconLocation;
-                    if(location == ",0") location = Shortcut.TargetPath;
+                    ShellLink.ICONLOCATION iconLocation = ShellLink.IconLocation;
+                    string iconPath = iconLocation.IconPath;
+                    int iconIndex = iconLocation.IconIndex;
+                    if(string.IsNullOrEmpty(iconPath)) iconPath = ShellLink.TargetPath;
+                    location = $@"{iconPath},{iconIndex}";
                 }
                 else
                 {
@@ -140,8 +144,12 @@ namespace ContextMenuManager.Controls
             {
                 if(IsShortcut)
                 {
-                    Shortcut.IconLocation = $"{this.IconPath},{this.IconIndex}";
-                    Shortcut.Save();
+                    ShellLink.IconLocation = new ShellLink.ICONLOCATION
+                    {
+                        IconPath = this.IconPath,
+                        IconIndex = this.IconIndex
+                    };
+                    ShellLink.Save();
                 }
                 else
                 {
@@ -201,9 +209,9 @@ namespace ContextMenuManager.Controls
 
             TsiChangeCommand.Click += (sender, e) =>
             {
-                if(TsiChangeCommand.ChangeCommand(Shortcut))
+                if(TsiChangeCommand.ChangeCommand(ShellLink))
                 {
-                    Image = ItemIcon.ToBitmap();
+                    Image = this.ItemImage;
                 }
             };
         }
@@ -212,8 +220,7 @@ namespace ContextMenuManager.Controls
         {
             File.Delete(this.FilePath);
             DesktopIni.DeleteLocalizedFileNames(FilePath);
-            this.Shortcut.Dispose();
-            this.Dispose();
+            this.ShellLink?.Dispose();
         }
     }
 }

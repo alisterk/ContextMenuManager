@@ -1,13 +1,23 @@
 ﻿using Microsoft.Win32;
 using System;
-using System.Diagnostics;
-using System.IO;
 using System.Security.AccessControl;
 
 namespace BluePointLilac.Methods
 {
     public static class RegistryEx
     {
+        public const string CLASSES_ROOT = "HKEY_CLASSES_ROOT";
+        public const string CURRENT_USER = "HKEY_CURRENT_USER";
+        public const string LOCAL_MACHINE = "HKEY_LOCAL_MACHINE";
+        public const string CURRENT_CONFIG = "HKEY_CURRENT_CONFIG";
+        public const string USERS = "HKEY_USERS";
+
+        public const string HKCR = "HKCR";
+        public const string HKCU = "HKCU";
+        public const string HKLM = "HKLM";
+        public const string HKCC = "HKCC";
+        public const string HKU = "HKU";
+
         public static void CopyTo(this RegistryKey srcKey, RegistryKey dstKey)
         {
             foreach(string name in srcKey.GetValueNames())
@@ -93,28 +103,42 @@ namespace BluePointLilac.Methods
         /// <param name="subRegPath">不包含根项的注册表路径</param>
         public static void GetRootAndSubRegPath(string regPath, out RegistryKey root, out string subRegPath)
         {
+            string rootPath;
             int index = regPath.IndexOf('\\');
-            subRegPath = regPath.Substring(index + 1);
-            string rootPath = regPath.Substring(0, index).ToUpper();
+            if(index > 0)
+            {
+                rootPath = regPath.Substring(0, index).ToUpper();
+                subRegPath = regPath.Substring(index + 1);
+            }
+            else
+            {
+                rootPath = regPath;
+                subRegPath = string.Empty;
+            }
             switch(rootPath)
             {
-                case "HKEY_CLASSES_ROOT":
+                case HKCR:
+                case CLASSES_ROOT:
                     root = Registry.ClassesRoot;
                     break;
-                case "HKEY_CURRENT_USER":
+                case HKCU:
+                case CURRENT_USER:
                     root = Registry.CurrentUser;
                     break;
-                case "HKEY_LOCAL_MACHINE":
+                case HKLM:
+                case LOCAL_MACHINE:
                     root = Registry.LocalMachine;
                     break;
-                case "HKEY_USERS":
+                case HKU:
+                case USERS:
                     root = Registry.Users;
                     break;
-                case "HKEY_CURRENT_CONFIG":
+                case HKCC:
+                case CURRENT_CONFIG:
                     root = Registry.CurrentConfig;
                     break;
                 default:
-                    throw new ArgumentNullException("非法的根项!");
+                    throw new ArgumentNullException(regPath);
             }
         }
 
@@ -140,13 +164,6 @@ namespace BluePointLilac.Methods
         {
             GetRootAndSubRegPath(regPath, out RegistryKey root, out string keyPath);
             using(root) return root.OpenSubKey(keyPath, check, rights);
-        }
-
-        public static void Export(string regPath, string filePath)
-        {
-            if(File.Exists(filePath)) File.Delete(filePath);
-            using(Process process = Process.Start("regedit.exe", $"/e \"{filePath}\" \"{regPath}\""))
-                process.WaitForExit();
         }
     }
 }

@@ -1,6 +1,7 @@
 ﻿using BluePointLilac.Controls;
 using BluePointLilac.Methods;
 using ContextMenuManager.Controls.Interfaces;
+using ContextMenuManager.Methods;
 using Microsoft.Win32;
 using System;
 using System.Diagnostics;
@@ -30,7 +31,6 @@ namespace ContextMenuManager.Controls
                 this.ItemFilePath = ObjectPath.ExtractFilePath(ItemCommand);
                 this.Text = this.ItemText;
                 this.Image = this.ItemIcon.ToBitmap();
-                ChkVisible.Checked = this.ItemVisible;
             }
         }
         public string ValueName => null;
@@ -67,7 +67,7 @@ namespace ContextMenuManager.Controls
             {
                 if(ObjectPath.ExtractFilePath(value) != ItemFilePath)
                 {
-                    MessageBoxEx.Show(AppString.MessageBox.CannotChangePath);
+                    AppMessageBox.Show(AppString.Message.CannotChangePath);
                 }
                 else Registry.SetValue(RegPath, "", value);
             }
@@ -128,7 +128,6 @@ namespace ContextMenuManager.Controls
             {
                 if(key.GetSubKeyNames().Length == 0) RegistryEx.DeleteKeyTree(this.AppPath);
             }
-            this.Dispose();
         }
     }
 }

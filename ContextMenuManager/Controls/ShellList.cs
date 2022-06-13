@@ -1,10 +1,12 @@
 ﻿using BluePointLilac.Controls;
 using BluePointLilac.Methods;
-using ContextMenuManager.Controls.Interfaces;
+using ContextMenuManager.Methods;
 using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Windows.Forms;
 using System.Xml;
@@ -28,71 +30,147 @@ namespace ContextMenuManager.Controls
         public const string MENUPATH_UWPLNK = @"HKEY_CLASSES_ROOT\Launcher.ImmersiveApplication";//UWP快捷方式
         public const string MENUPATH_UNKNOWN = @"HKEY_CLASSES_ROOT\Unknown";//未知格式
         public const string SYSFILEASSPATH = @"HKEY_CLASSES_ROOT\SystemFileAssociations";//系统扩展名注册表父项路径
+        private const string LASTKEYPATH = @"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Applets\Regedit";//上次打开的注册表项路径记录
 
         public enum Scenes
         {
             File, Folder, Directory, Background, Desktop, Drive, AllObjects, Computer, RecycleBin, Library,
-            LnkFile, UwpLnk, ExeFile, UnknownType, CustomExtension, PerceivedType, DirectoryType, CommandStore, DragDrop
+            LnkFile, UwpLnk, ExeFile, UnknownType, CustomExtension, PerceivedType, DirectoryType,
+            CommandStore, DragDrop, CustomRegPath, MenuAnalysis, CustomExtensionPerceivedType
         }
 
-        private static readonly string[] DirectoryTypes = { "Document", "Image", "Video", "Audio" };
-        private static readonly string[] PerceivedTypes = { "Text", "Document", "Image", "Video", "Audio", "Compressed", "System" };
+        private static readonly List<string> DirectoryTypes = new List<string>
+        {
+            "Document", "Image", "Video", "Audio"
+        };
+        private static readonly List<string> PerceivedTypes = new List<string>
+        {
+            null, "Text", "Document", "Image",
+            "Video", "Audio", "Compressed", "System"
+        };
+        private static readonly string[] PerceivedTypeNames =
+        {
+            AppString.Dialog.NoPerceivedType, AppString.Dialog.TextFile, AppString.Dialog.DocumentFile, AppString.Dialog.ImageFile,
+            AppString.Dialog.VideoFile, AppString.Dialog.AudioFile, AppString.Dialog.CompressedFile, AppString.Dialog.SystemFile
+        };
         private static readonly string[] DirectoryTypeNames =
         {
             AppString.Dialog.DocumentDirectory, AppString.Dialog.ImageDirectory,
             AppString.Dialog.VideoDirectory, AppString.Dialog.AudioDirectory
         };
-        private static readonly string[] PerceivedTypeNames =
-        {
-            AppString.Dialog.TextFile, AppString.Dialog.DocumentFile, AppString.Dialog.ImageFile, AppString.Dialog.VideoFile,
-            AppString.Dialog.AudioFile, AppString.Dialog.CompressedFile, AppString.Dialog.SystemFile
-        };
 
-        private static string GetDirectoryTypeName()
+        private static string GetDirectoryTypeName(string directoryType)
         {
-            if(CurrentDirectoryType != null)
-            {
-                for(int i = 0; i < DirectoryTypes.Length; i++)
-                {
-                    if(CurrentDirectoryType.Equals(DirectoryTypes[i], StringComparison.OrdinalIgnoreCase))
-                    {
-                        return DirectoryTypeNames[i];
-                    }
-                }
-            }
-            return null;
+            if(directoryType == null) return null;
+            int index = DirectoryTypes.FindIndex(type => directoryType.Equals(type, StringComparison.OrdinalIgnoreCase));
+            if(index >= 0) return DirectoryTypeNames[index];
+            else return null;
         }
 
-        private static string GetPerceivedTypeName()
+        private static string GetPerceivedTypeName(string perceivedType)
         {
-            if(CurrentPerceivedType != null)
+            int index = 0;
+            if(perceivedType != null) index = PerceivedTypes.FindIndex(type => perceivedType.Equals(type, StringComparison.OrdinalIgnoreCase));
+            if(index == -1) index = 0;
+            return PerceivedTypeNames[index];
+        }
+
+        private static readonly string[] DropEffectPaths =
+        {
+            MENUPATH_FILE, MENUPATH_ALLOBJECTS,
+            MENUPATH_FOLDER, MENUPATH_DIRECTORY
+        };
+        private static readonly string[] DropEffectNames =
+        {
+            AppString.Dialog.DefaultDropEffect, AppString.Dialog.CopyDropEffect,
+            AppString.Dialog.MoveDropEffect, AppString.Dialog.CreateLinkDropEffect
+        };
+
+        private enum DropEffect { Default = 0, Copy = 1, Move = 2, CreateLink = 4 }
+
+        private static DropEffect DefaultDropEffect
+        {
+            get
             {
-                for(int i = 0; i < PerceivedTypes.Length; i++)
+                foreach(string path in DropEffectPaths)
                 {
-                    if(CurrentPerceivedType.Equals(PerceivedTypes[i], StringComparison.OrdinalIgnoreCase))
+                    object value = Registry.GetValue(path, "DefaultDropEffect", null);
+                    if(value != null)
                     {
-                        return PerceivedTypeNames[i];
+                        switch(value)
+                        {
+                            case 1:
+                                return DropEffect.Copy;
+                            case 2:
+                                return DropEffect.Move;
+                            case 4:
+                                return DropEffect.CreateLink;
+                        }
                     }
                 }
+                return DropEffect.Default;
             }
-            return null;
+            set
+            {
+                object data;
+                switch(value)
+                {
+                    case DropEffect.Copy:
+                        data = 1; break;
+                    case DropEffect.Move:
+                        data = 2; break;
+                    case DropEffect.CreateLink:
+                        data = 4; break;
+                    default:
+                        data = 0; break;
+                }
+                foreach(string path in DropEffectPaths)
+                {
+                    Registry.SetValue(path, "DefaultDropEffect", data, RegistryValueKind.DWord);
+                }
+            }
+        }
+
+        private static string GetDropEffectName()
+        {
+            switch(DefaultDropEffect)
+            {
+                case DropEffect.Copy:
+                    return DropEffectNames[1];
+                case DropEffect.Move:
+                    return DropEffectNames[2];
+                case DropEffect.CreateLink:
+                    return DropEffectNames[3];
+                default:
+                    return DropEffectNames[0];
+            }
         }
 
         private static string CurrentExtension = null;
         private static string CurrentDirectoryType = null;
         private static string CurrentPerceivedType = null;
+        public static string CurrentCustomRegPath = null;
+        public static string CurrentFileObjectPath = null;
+
+        private static string CurrentExtensionPerceivedType
+        {
+            get => GetPerceivedType(CurrentExtension);
+            set
+            {
+                string path = $@"{RegistryEx.CLASSES_ROOT}\{CurrentExtension}";
+                if(value == null) RegistryEx.DeleteValue(path, "PerceivedType");
+                else Registry.SetValue(path, "PerceivedType", value, RegistryValueKind.String);
+            }
+        }
 
         private static string GetShellPath(string scenePath) => $@"{scenePath}\shell";
-        private static string GetShellExPath(string scenePath) => $@"{scenePath}\shellEx";
+        private static string GetShellExPath(string scenePath) => $@"{scenePath}\ShellEx";
         private static string GetSysAssExtPath(string typeName) => typeName != null ? $@"{SYSFILEASSPATH}\{typeName}" : null;
-        private static string GetOpenModePath(string extension) => extension != null ? $@"HKEY_CLASSES_ROOT\{FileExtension.GetOpenMode(extension)}" : null;
+        private static string GetOpenMode(string extension) => FileExtension.GetOpenMode(extension);
+        private static string GetOpenModePath(string extension) => extension != null ? $@"{RegistryEx.CLASSES_ROOT}\{GetOpenMode(extension)}" : null;
+        private static string GetPerceivedType(string extension) => Registry.GetValue($@"{RegistryEx.CLASSES_ROOT}\{extension}", "PerceivedType", null)?.ToString();
 
         public Scenes Scene { get; set; }
-
-        public ShellList()
-        {
-            SelectItem.SelectedChanged += (sender, e) => { this.ClearItems(); this.LoadItems(); };
-        }
 
         public void LoadItems()
         {
@@ -109,7 +187,7 @@ namespace ContextMenuManager.Controls
                     scenePath = MENUPATH_BACKGROUND; break;
                 case Scenes.Desktop:
                     //Vista系统没有这一项
-                    if(WindowsOsVersion.IsEqualVista) return;
+                    if(WinOsVersion.Current == WinOsVersion.Vista) return;
                     scenePath = MENUPATH_DESKTOP; break;
                 case Scenes.Drive:
                     scenePath = MENUPATH_DRIVE; break;
@@ -121,32 +199,42 @@ namespace ContextMenuManager.Controls
                     scenePath = MENUPATH_RECYCLEBIN; break;
                 case Scenes.Library:
                     //Vista系统没有这一项
-                    if(WindowsOsVersion.IsEqualVista) return;
+                    if(WinOsVersion.Current == WinOsVersion.Vista) return;
                     scenePath = MENUPATH_LIBRARY; break;
                 case Scenes.LnkFile:
-                    scenePath = GetSysAssExtPath(".lnk"); break;
+                    scenePath = GetOpenModePath(".lnk"); break;
                 case Scenes.UwpLnk:
                     //Win8之前没有Uwp
-                    if(WindowsOsVersion.IsBefore8) return;
+                    if(WinOsVersion.Current < WinOsVersion.Win8) return;
                     scenePath = MENUPATH_UWPLNK; break;
                 case Scenes.ExeFile:
                     scenePath = GetSysAssExtPath(".exe"); break;
                 case Scenes.UnknownType:
                     scenePath = MENUPATH_UNKNOWN; break;
                 case Scenes.CustomExtension:
-                    scenePath = GetSysAssExtPath(CurrentExtension); break;
+                    bool isLnk = CurrentExtension?.ToLower() == ".lnk";
+                    if(isLnk) scenePath = GetOpenModePath(".lnk");
+                    else scenePath = GetSysAssExtPath(CurrentExtension);
+                    break;
                 case Scenes.PerceivedType:
                     scenePath = GetSysAssExtPath(CurrentPerceivedType); break;
                 case Scenes.DirectoryType:
                     if(CurrentDirectoryType == null) scenePath = null;
                     else scenePath = GetSysAssExtPath($"Directory.{CurrentDirectoryType}"); break;
+                case Scenes.MenuAnalysis:
+                    this.AddItem(new SelectItem(Scene));
+                    this.LoadAnalysisItems();
+                    return;
+                case Scenes.CustomRegPath:
+                    scenePath = CurrentCustomRegPath; break;
                 case Scenes.CommandStore:
                     //Vista系统没有这一项
-                    if(WindowsOsVersion.IsEqualVista) return;
+                    if(WinOsVersion.Current == WinOsVersion.Vista) return;
                     this.AddNewItem(RegistryEx.GetParentPath(ShellItem.CommandStorePath));
                     this.LoadStoreItems();
                     return;
                 case Scenes.DragDrop:
+                    this.AddItem(new SelectItem(Scene));
                     this.AddNewItem(MENUPATH_FOLDER);
                     this.LoadShellExItems(GetShellExPath(MENUPATH_FOLDER));
                     this.LoadShellExItems(GetShellExPath(MENUPATH_DIRECTORY));
@@ -156,7 +244,10 @@ namespace ContextMenuManager.Controls
             }
             this.AddNewItem(scenePath);
             this.LoadItems(scenePath);
-            if(WindowsOsVersion.ISAfterOrEqual10) this.AddUwpModeItem();
+            if(WinOsVersion.Current >= WinOsVersion.Win10)
+            {
+                this.LoadUwpModeItem();
+            }
             switch(Scene)
             {
                 case Scenes.Background:
@@ -172,17 +263,19 @@ namespace ContextMenuManager.Controls
                     this.LoadItems(MENUPATH_LIBRARY_BACKGROUND);
                     this.LoadItems(MENUPATH_LIBRARY_USER);
                     break;
-                case Scenes.LnkFile:
-                    this.LoadItems(GetOpenModePath(".lnk"));
-                    break;
                 case Scenes.ExeFile:
                     this.LoadItems(GetOpenModePath(".exe"));
                     break;
                 case Scenes.CustomExtension:
                 case Scenes.PerceivedType:
                 case Scenes.DirectoryType:
+                case Scenes.CustomRegPath:
                     this.InsertItem(new SelectItem(Scene), 0);
-                    if(Scene == Scenes.CustomExtension) this.LoadItems(GetOpenModePath(CurrentExtension));
+                    if(Scene == Scenes.CustomExtension && CurrentExtension != null)
+                    {
+                        this.LoadItems(GetOpenModePath(CurrentExtension));
+                        this.InsertItem(new SelectItem(Scenes.CustomExtensionPerceivedType), 1);
+                    }
                     break;
             }
         }
@@ -201,10 +294,10 @@ namespace ContextMenuManager.Controls
             {
                 if(shellKey == null) return;
                 RegTrustedInstaller.TakeRegTreeOwnerShip(shellKey.Name);
-                Array.ForEach(shellKey.GetSubKeyNames(), keyName =>
+                foreach(string keyName in shellKey.GetSubKeyNames())
                 {
                     this.AddItem(new ShellItem($@"{shellPath}\{keyName}"));
-                });
+                }
             }
         }
 
@@ -217,7 +310,7 @@ namespace ContextMenuManager.Controls
                 bool isDragDrop = Scene == Scenes.DragDrop;
                 RegTrustedInstaller.TakeRegTreeOwnerShip(shellExKey.Name);
                 Dictionary<string, Guid> dic = ShellExItem.GetPathAndGuids(shellExPath, isDragDrop);
-                GroupPathItem groupItem = null;
+                FoldGroupItem groupItem = null;
                 if(isDragDrop)
                 {
                     groupItem = GetDragDropGroupItem(shellExPath);
@@ -229,16 +322,20 @@ namespace ContextMenuManager.Controls
                     if(!names.Contains(keyName))
                     {
                         ShellExItem item = new ShellExItem(dic[path], path);
-                        if(groupItem != null) item.FoldGroupItem = groupItem;
+                        if(groupItem != null)
+                        {
+                            item.FoldGroupItem = groupItem;
+                            item.Indent();
+                        }
                         this.AddItem(item);
                         names.Add(keyName);
                     }
                 }
-                if(groupItem != null) groupItem.IsFold = true;
+                groupItem?.SetVisibleWithSubItemCount();
             }
         }
 
-        private GroupPathItem GetDragDropGroupItem(string shellExPath)
+        private FoldGroupItem GetDragDropGroupItem(string shellExPath)
         {
             string text = null;
             Image image = null;
@@ -262,14 +359,34 @@ namespace ContextMenuManager.Controls
                     image = AppImage.AllObjects;
                     break;
             }
-            return new GroupPathItem(shellExPath, ObjectPath.PathType.Registry) { Text = text, Image = image };
+            return new FoldGroupItem(shellExPath, ObjectPath.PathType.Registry) { Text = text, Image = image };
         }
 
         private void AddNewItem(string scenePath)
         {
-            NewItem newItem = new NewItem { Visible = scenePath != null };
+            if(scenePath == null) return;
+            string shellPath = GetShellPath(scenePath);
+            NewItem newItem = new NewItem();
+            PictureButton btnAddExisting = new PictureButton(AppImage.AddExisting);
+            PictureButton btnEnhanceMenu = new PictureButton(AppImage.Enhance);
+            ToolTipBox.SetToolTip(btnAddExisting, AppString.Tip.AddFromPublic);
+            ToolTipBox.SetToolTip(btnEnhanceMenu, AppString.StatusBar.EnhanceMenu);
+            if(Scene == Scenes.DragDrop || ShellItem.CommandStorePath.Equals(shellPath,
+                StringComparison.OrdinalIgnoreCase)) btnAddExisting.Visible = false;
+            else
+            {
+                using(RegistryKey key = RegistryEx.GetRegistryKey(ShellItem.CommandStorePath))
+                {
+                    List<string> subKeyNames = key.GetSubKeyNames().ToList();
+                    if(AppConfig.HideSysStoreItems) subKeyNames.RemoveAll(name => name.StartsWith("Windows.", StringComparison.OrdinalIgnoreCase));
+                    if(subKeyNames.Count == 0) btnAddExisting.Visible = false;
+                }
+            }
+            if(!XmlDicHelper.EnhanceMenuPathDic.ContainsKey(scenePath)) btnEnhanceMenu.Visible = false;
+            newItem.AddCtrs(new[] { btnAddExisting, btnEnhanceMenu });
             this.AddItem(newItem);
-            newItem.AddNewItem += (sender, e) =>
+
+            newItem.AddNewItem += () =>
             {
                 bool isShell;
                 if(Scene == Scenes.CommandStore) isShell = true;
@@ -280,13 +397,54 @@ namespace ContextMenuManager.Controls
                     {
                         dlg.Items = new[] { "Shell", "ShellEx" };
                         dlg.Title = AppString.Dialog.SelectNewItemType;
-                        dlg.Selected = dlg.Items[0];
                         if(dlg.ShowDialog() != DialogResult.OK) return;
                         isShell = dlg.SelectedIndex == 0;
                     }
                 }
                 if(isShell) this.AddNewShellItem(scenePath);
                 else this.AddNewShellExItem(scenePath);
+            };
+
+            btnAddExisting.MouseDown += (sender, e) =>
+            {
+                using(ShellStoreDialog dlg = new ShellStoreDialog())
+                {
+                    dlg.IsReference = false;
+                    dlg.ShellPath = ShellItem.CommandStorePath;
+                    dlg.Filter = new Func<string, bool>(itemName => !(AppConfig.HideSysStoreItems
+                        && itemName.StartsWith("Windows.", StringComparison.OrdinalIgnoreCase)));
+                    if(dlg.ShowDialog() != DialogResult.OK) return;
+                    foreach(string keyName in dlg.SelectedKeyNames)
+                    {
+                        string srcPath = $@"{dlg.ShellPath}\{keyName}";
+                        string dstPath = ObjectPath.GetNewPathWithIndex($@"{shellPath}\{keyName}", ObjectPath.PathType.Registry);
+
+                        RegistryEx.CopyTo(srcPath, dstPath);
+                        this.AddItem(new ShellItem(dstPath));
+                    }
+                }
+            };
+
+            btnEnhanceMenu.MouseDown += (sender, e) =>
+            {
+                string tempPath1 = Path.GetTempFileName();
+                string tempPath2 = Path.GetTempFileName();
+                ExternalProgram.ExportRegistry(scenePath, tempPath1);
+                using(EnhanceMenusDialog dlg = new EnhanceMenusDialog())
+                {
+                    dlg.ScenePath = scenePath;
+                    dlg.ShowDialog();
+                }
+                ExternalProgram.ExportRegistry(scenePath, tempPath2);
+                string str1 = File.ReadAllText(tempPath1);
+                string str2 = File.ReadAllText(tempPath2);
+                File.Delete(tempPath1);
+                File.Delete(tempPath2);
+                if(!str1.Equals(str2))
+                {
+                    MainForm mainForm = (MainForm)this.FindForm();
+                    mainForm.JumpItem(mainForm.ToolBar.SelectedIndex, mainForm.SideBar.SelectedIndex);
+                }
             };
         }
 
@@ -328,7 +486,6 @@ namespace ContextMenuManager.Controls
                             dlg2.Title = AppString.Dialog.SelectGroup;
                             dlg2.Items = new[] { AppString.SideBar.Folder, AppString.SideBar.Directory,
                                         AppString.SideBar.Drive, AppString.SideBar.AllObjects };
-                            dlg2.Selected = dlg2.Items[0];
                             if(dlg2.ShowDialog() != DialogResult.OK) return;
                             switch(dlg2.SelectedIndex)
                             {
@@ -346,7 +503,7 @@ namespace ContextMenuManager.Controls
                     string shellExPath = GetShellExPath(scenePath);
                     if(ShellExItem.GetPathAndGuids(shellExPath, isDragDrop).Values.Contains(guid))
                     {
-                        MessageBoxEx.Show(AppString.MessageBox.HasBeenAdded);
+                        AppMessageBox.Show(AppString.Message.HasBeenAdded);
                     }
                     else
                     {
@@ -358,13 +515,15 @@ namespace ContextMenuManager.Controls
                         {
                             if(isDragDrop)
                             {
-                                if(this.Controls[i] is GroupPathItem groupItem)
+                                if(this.Controls[i] is FoldGroupItem groupItem)
                                 {
-                                    if(groupItem.TargetPath.Equals(shellExPath, StringComparison.OrdinalIgnoreCase))
+                                    if(groupItem.GroupPath.Equals(shellExPath, StringComparison.OrdinalIgnoreCase))
                                     {
                                         this.InsertItem(item, i + 1);
                                         item.FoldGroupItem = groupItem;
+                                        groupItem.SetVisibleWithSubItemCount();
                                         item.Visible = !groupItem.IsFold;
+                                        item.Indent();
                                         break;
                                     }
                                 }
@@ -382,41 +541,45 @@ namespace ContextMenuManager.Controls
                 }
                 else
                 {
-                    MessageBoxEx.Show(AppString.MessageBox.MalformedGuid);
+                    AppMessageBox.Show(AppString.Message.MalformedGuid);
                 }
             }
         }
 
-        ///<summary>“其他规则”-“公共引用”</summary>
         private void LoadStoreItems()
         {
-            using(var shellKey = RegistryEx.GetRegistryKey(ShellItem.CommandStorePath))
+            using(RegistryKey shellKey = RegistryEx.GetRegistryKey(ShellItem.CommandStorePath))
             {
-                Array.ForEach(Array.FindAll(shellKey.GetSubKeyNames(), itemName =>
-                    !ShellItem.SysStoreItemNames.Contains(itemName, StringComparer.OrdinalIgnoreCase)), itemName =>
-                        this.AddItem(new StoreShellItem($@"{ShellItem.CommandStorePath}\{itemName}", true, false)));
+                foreach(string itemName in shellKey.GetSubKeyNames())
+                {
+                    if(AppConfig.HideSysStoreItems && itemName.StartsWith("Windows.", StringComparison.OrdinalIgnoreCase)) continue;
+                    this.AddItem(new StoreShellItem($@"{ShellItem.CommandStorePath}\{itemName}", true, false));
+                }
             }
         }
 
-        private void AddUwpModeItem()
+        private void LoadUwpModeItem()
         {
-            XmlDocument doc = AppDic.ReadXml(AppConfig.WebUwpModeItemsDic,
-                AppConfig.UserUwpModeItemsDic, Properties.Resources.UwpModeItemsDic);
-            List<Guid> guids = new List<Guid>();
-            foreach(XmlElement sceneXE in doc.DocumentElement.ChildNodes)
+            foreach(XmlDocument doc in XmlDicHelper.UwpModeItemsDic)
             {
-                if(sceneXE.Name == Scene.ToString())
+                if(doc?.DocumentElement == null) continue;
+                foreach(XmlNode sceneXN in doc.DocumentElement.ChildNodes)
                 {
-                    foreach(XmlElement itemXE in sceneXE.ChildNodes)
+                    if(sceneXN.Name == Scene.ToString())
                     {
-                        if(GuidEx.TryParse(itemXE.GetAttribute("Guid"), out Guid guid))
+                        foreach(XmlElement itemXE in sceneXN.ChildNodes)
                         {
-                            if(guids.Contains(guid)) continue;
-                            string uwpName = GuidInfo.GetUwpName(guid);
-                            if(!string.IsNullOrEmpty(uwpName))
+                            if(GuidEx.TryParse(itemXE.GetAttribute("Guid"), out Guid guid))
                             {
+                                bool isAdded = false;
+                                foreach(Control ctr in this.Controls)
+                                {
+                                    if(ctr is UwpModeItem item && item.Guid == guid) { isAdded = true; break; }
+                                }
+                                if(isAdded) continue;
+                                if(GuidInfo.GetFilePath(guid) == null) continue;
+                                string uwpName = GuidInfo.GetUwpName(guid);
                                 this.AddItem(new UwpModeItem(uwpName, guid));
-                                guids.Add(guid);
                             }
                         }
                     }
@@ -424,72 +587,141 @@ namespace ContextMenuManager.Controls
             }
         }
 
-        sealed class SelectItem : MyListItem
+        private void LoadAnalysisItems()
         {
-            static string selected;
-            public static string Selected
+            if(CurrentFileObjectPath == null) return;
+
+            void AddFileItems(string filePath)
             {
-                get => selected;
-                set
+                string extension = Path.GetExtension(filePath).ToLower();
+                if(extension == string.Empty) extension = ".";
+                string perceivedType = GetPerceivedType(extension);
+                string perceivedTypeName = GetPerceivedTypeName(perceivedType);
+                JumpItem.TargetPath = filePath;
+                JumpItem.Extension = extension;
+                JumpItem.PerceivedType = perceivedType;
+                this.AddItem(new JumpItem(Scenes.File));
+                this.AddItem(new JumpItem(Scenes.AllObjects));
+                if(extension == ".exe") this.AddItem(new JumpItem(Scenes.ExeFile));
+                else this.AddItem(new JumpItem(Scenes.CustomExtension));
+                if(GetOpenMode(extension) == null) this.AddItem(new JumpItem(Scenes.UnknownType));
+                if(perceivedType != null) this.AddItem(new JumpItem(Scenes.PerceivedType));
+            }
+
+            void AddDirItems(string dirPath)
+            {
+                if(!dirPath.EndsWith(":\\"))
                 {
-                    selected = value;
-                    SelectedChanged?.Invoke(null, null);
+                    this.AddItem(new JumpItem(Scenes.Folder));
+                    this.AddItem(new JumpItem(Scenes.Directory));
+                    this.AddItem(new JumpItem(Scenes.AllObjects));
+                    this.AddItem(new JumpItem(Scenes.DirectoryType));
+                }
+                else
+                {
+                    this.AddItem(new JumpItem(Scenes.Folder));
+                    this.AddItem(new JumpItem(Scenes.Drive));
                 }
             }
 
-            public static event EventHandler SelectedChanged;
+            if(File.Exists(CurrentFileObjectPath))
+            {
+                string extension = Path.GetExtension(CurrentFileObjectPath).ToLower();
+                if(extension == ".lnk")
+                {
+                    using(ShellLink shellLink = new ShellLink(CurrentFileObjectPath))
+                    {
+                        string targetPath = shellLink.TargetPath;
+                        if(File.Exists(targetPath)) AddFileItems(targetPath);
+                        else if(Directory.Exists(targetPath)) AddDirItems(targetPath);
+                    }
+                    this.AddItem(new JumpItem(Scenes.LnkFile));
+                }
+                else AddFileItems(CurrentFileObjectPath);
+            }
+            else if(Directory.Exists(CurrentFileObjectPath)) AddDirItems(CurrentFileObjectPath);
+        }
+
+        sealed class SelectItem : MyListItem
+        {
+            public SelectItem(Scenes scene)
+            {
+                this.Scene = scene;
+                this.AddCtr(BtnSelect);
+                this.SetTextAndTip();
+                this.SetImage();
+                BtnSelect.MouseDown += (sender, e) => ShowSelectDialog();
+                this.MouseDoubleClick += (sender, e) => ShowSelectDialog();
+            }
 
             readonly PictureButton BtnSelect = new PictureButton(AppImage.Select);
 
-            public SelectItem(Scenes scene)
-            {
-                this.SetNoClickEvent();
-                this.Image = AppImage.Custom;
-                this.Text = this.GetText(scene);
-                this.AddCtr(BtnSelect);
-                BtnSelect.MouseDown += (sender, e) => Select(scene);
-            }
+            public Scenes Scene { get; private set; }
+            public string SelectedPath { get; set; }
 
-            private string GetText(Scenes scene)
+            private void SetTextAndTip()
             {
-                switch(scene)
+                string tip = "";
+                string text = "";
+                switch(Scene)
                 {
                     case Scenes.CustomExtension:
-                        if(CurrentExtension == null)
-                        {
-                            return AppString.Dialog.SelectExtension;
-                        }
-                        else
-                        {
-                            return AppString.Other.CurrentExtension.Replace("%s", CurrentExtension);
-                        }
+                        tip = AppString.Dialog.SelectExtension;
+                        if(CurrentExtension == null) text = tip;
+                        else text = AppString.Other.CurrentExtension.Replace("%s", CurrentExtension);
+                        break;
                     case Scenes.PerceivedType:
-                        if(CurrentPerceivedType == null)
-                        {
-                            return AppString.Dialog.SelectPerceivedType;
-                        }
-                        else
-                        {
-                            return AppString.Other.CurrentPerceivedType.Replace("%s", GetPerceivedTypeName());
-                        }
+                        tip = AppString.Dialog.SelectPerceivedType;
+                        if(CurrentPerceivedType == null) text = tip;
+                        else text = AppString.Other.CurrentPerceivedType.Replace("%s", GetPerceivedTypeName(CurrentPerceivedType));
+                        break;
                     case Scenes.DirectoryType:
-                        if(CurrentDirectoryType == null)
-                        {
-                            return AppString.Dialog.SelectDirectoryType;
-                        }
-                        else
-                        {
-                            return AppString.Other.CurrentDirectoryType.Replace("%s", GetDirectoryTypeName());
-                        }
-                    default:
-                        return null;
+                        tip = AppString.Dialog.SelectDirectoryType;
+                        if(CurrentDirectoryType == null) text = tip;
+                        else text = AppString.Other.CurrentDirectoryType.Replace("%s", GetDirectoryTypeName(CurrentDirectoryType));
+                        break;
+                    case Scenes.CustomRegPath:
+                        this.SelectedPath = CurrentCustomRegPath;
+                        tip = AppString.Other.SelectRegPath;
+                        if(this.SelectedPath == null) text = tip;
+                        else text = AppString.Other.CurrentRegPath + "\n" + this.SelectedPath;
+                        break;
+                    case Scenes.MenuAnalysis:
+                        this.SelectedPath = CurrentFileObjectPath;
+                        tip = AppString.Tip.DropOrSelectObject;
+                        if(this.SelectedPath == null) text = tip;
+                        else text = AppString.Other.CurrentFilePath + "\n" + this.SelectedPath;
+                        break;
+                    case Scenes.DragDrop:
+                        this.SelectedPath = GetDropEffectName();
+                        tip = AppString.Dialog.SelectDropEffect;
+                        text = AppString.Other.SetDefaultDropEffect + " " + this.SelectedPath;
+                        break;
+                    case Scenes.CustomExtensionPerceivedType:
+                        tip = AppString.Dialog.SelectPerceivedType;
+                        text = AppString.Other.SetPerceivedType.Replace("%s", CurrentExtension) + " " + GetPerceivedTypeName(CurrentExtensionPerceivedType);
+                        break;
                 }
+                ToolTipBox.SetToolTip(BtnSelect, tip);
+                this.Text = text;
             }
 
-            private void Select(Scenes scene)
+            private void SetImage()
             {
-                SelectDialog dlg;
-                switch(scene)
+                switch(Scene)
+                {
+                    case Scenes.CustomExtensionPerceivedType:
+                        using(Icon icon = ResourceIcon.GetExtensionIcon(CurrentExtension))
+                            this.Image = icon?.ToBitmap();
+                        break;
+                }
+                if(this.Image == null) this.Image = AppImage.Custom;
+            }
+
+            private void ShowSelectDialog()
+            {
+                SelectDialog dlg = null;
+                switch(Scene)
                 {
                     case Scenes.CustomExtension:
                         dlg = new FileExtensionDialog
@@ -502,7 +734,7 @@ namespace ContextMenuManager.Controls
                         {
                             Items = PerceivedTypeNames,
                             Title = AppString.Dialog.SelectPerceivedType,
-                            Selected = GetPerceivedTypeName() ?? PerceivedTypeNames[0]
+                            Selected = GetPerceivedTypeName(CurrentPerceivedType)
                         };
                         break;
                     case Scenes.DirectoryType:
@@ -510,25 +742,215 @@ namespace ContextMenuManager.Controls
                         {
                             Items = DirectoryTypeNames,
                             Title = AppString.Dialog.SelectDirectoryType,
-                            Selected = GetDirectoryTypeName() ?? DirectoryTypeNames[0]
+                            Selected = GetDirectoryTypeName(CurrentDirectoryType)
                         };
                         break;
-                    default: return;
+                    case Scenes.CustomExtensionPerceivedType:
+                        dlg = new SelectDialog
+                        {
+                            Items = PerceivedTypeNames,
+                            Title = AppString.Dialog.SelectPerceivedType,
+                            Selected = GetPerceivedTypeName(CurrentExtensionPerceivedType)
+                        };
+                        break;
+                    case Scenes.DragDrop:
+                        dlg = new SelectDialog
+                        {
+                            Items = DropEffectNames,
+                            Title = AppString.Dialog.SelectDropEffect,
+                            Selected = GetDropEffectName()
+                        };
+                        break;
+                    case Scenes.MenuAnalysis:
+                        dlg = new SelectDialog
+                        {
+                            Items = new[] { AppString.SideBar.File, AppString.SideBar.Directory },
+                            Title = AppString.Dialog.SelectObjectType,
+                        };
+                        break;
+                    case Scenes.CustomRegPath:
+                        if(AppMessageBox.Show(AppString.Message.SelectRegPath,
+                            MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+                        Form frm = this.FindForm();
+                        frm.Hide();
+                        using(Process process = Process.Start("regedit.exe", "-m"))
+                        {
+                            process.WaitForExit();
+                        }
+                        string path = Registry.GetValue(LASTKEYPATH, "LastKey", "").ToString();
+                        int index = path.IndexOf('\\');
+                        if(index == -1) return;
+                        path = path.Substring(index + 1);
+                        CurrentCustomRegPath = path;
+                        this.RefreshList();
+                        frm.Show();
+                        frm.Activate();
+                        break;
                 }
-                if(dlg.ShowDialog() != DialogResult.OK) return;
-                switch(scene)
+                switch(Scene)
                 {
                     case Scenes.CustomExtension:
-                        Selected = CurrentExtension = dlg.Selected;
+                    case Scenes.PerceivedType:
+                    case Scenes.DirectoryType:
+                    case Scenes.MenuAnalysis:
+                    case Scenes.DragDrop:
+                    case Scenes.CustomExtensionPerceivedType:
+                        if(dlg.ShowDialog() != DialogResult.OK) return;
+                        break;
+                }
+                switch(Scene)
+                {
+                    case Scenes.CustomExtension:
+                        CurrentExtension = dlg.Selected;
+                        this.RefreshList();
                         break;
                     case Scenes.PerceivedType:
-                        Selected = CurrentPerceivedType = PerceivedTypes[dlg.SelectedIndex];
+                        CurrentPerceivedType = PerceivedTypes[dlg.SelectedIndex];
+                        this.RefreshList();
                         break;
                     case Scenes.DirectoryType:
-                        Selected = CurrentDirectoryType = DirectoryTypes[dlg.SelectedIndex];
+                        CurrentDirectoryType = DirectoryTypes[dlg.SelectedIndex];
+                        this.RefreshList();
+                        break;
+                    case Scenes.CustomExtensionPerceivedType:
+                        string selected = PerceivedTypes[dlg.SelectedIndex];
+                        CurrentExtensionPerceivedType = selected;
+                        this.Text = AppString.Other.SetPerceivedType.Replace("%s", CurrentExtension) + " " + GetPerceivedTypeName(selected);
+                        break;
+                    case Scenes.DragDrop:
+                        switch(dlg.SelectedIndex)
+                        {
+                            case 0: DefaultDropEffect = DropEffect.Default; break;
+                            case 1: DefaultDropEffect = DropEffect.Copy; break;
+                            case 2: DefaultDropEffect = DropEffect.Move; break;
+                            case 3: DefaultDropEffect = DropEffect.CreateLink; break;
+                        }
+                        this.Text = AppString.Other.SetDefaultDropEffect + " " + GetDropEffectName();
+                        break;
+                    case Scenes.MenuAnalysis:
+                        if(dlg.SelectedIndex == 0)
+                        {
+                            using(var dlg1 = new System.Windows.Forms.OpenFileDialog())
+                            {
+                                dlg1.DereferenceLinks = false;
+                                if(dlg1.ShowDialog() != DialogResult.OK) return;
+                                CurrentFileObjectPath = dlg1.FileName;
+                            }
+                        }
+                        else
+                        {
+                            using(var dlg2 = new FolderBrowserDialog())
+                            {
+                                if(dlg2.ShowDialog() != DialogResult.OK) return;
+                                CurrentFileObjectPath = dlg2.SelectedPath;
+                            }
+                        }
+                        this.RefreshList();
                         break;
                 }
             }
+
+            private void RefreshList()
+            {
+                ShellList list = (ShellList)this.Parent;
+                list.ClearItems();
+                list.LoadItems();
+            }
+        }
+
+        sealed class JumpItem : MyListItem
+        {
+            public JumpItem(Scenes scene)
+            {
+                this.AddCtr(btnJump);
+                Image image = null;
+                int index1 = 0;
+                int index2 = 0;
+                string[] txts = null;
+                switch(scene)
+                {
+                    case Scenes.File:
+                        txts = new[] { AppString.ToolBar.Home, AppString.SideBar.File };
+                        image = AppImage.File;
+                        break;
+                    case Scenes.Folder:
+                        txts = new[] { AppString.ToolBar.Home, AppString.SideBar.Folder };
+                        image = AppImage.Folder;
+                        index2 = 1;
+                        break;
+                    case Scenes.Directory:
+                        txts = new[] { AppString.ToolBar.Home, AppString.SideBar.Directory };
+                        image = AppImage.Directory;
+                        index2 = 2;
+                        break;
+                    case Scenes.Drive:
+                        txts = new[] { AppString.ToolBar.Home, AppString.SideBar.Drive };
+                        image = AppImage.Drive;
+                        index2 = 5;
+                        break;
+                    case Scenes.AllObjects:
+                        txts = new[] { AppString.ToolBar.Home, AppString.SideBar.AllObjects };
+                        image = AppImage.AllObjects;
+                        index2 = 6;
+                        break;
+                    case Scenes.LnkFile:
+                        txts = new[] { AppString.ToolBar.Type, AppString.SideBar.LnkFile };
+                        image = AppImage.LnkFile;
+                        index1 = 1;
+                        break;
+                    case Scenes.ExeFile:
+                        txts = new[] { AppString.ToolBar.Type, AppString.SideBar.ExeFile };
+                        using(Icon icon = ResourceIcon.GetExtensionIcon(TargetPath)) image = icon.ToBitmap();
+                        index1 = 1;
+                        index2 = 2;
+                        break;
+                    case Scenes.UnknownType:
+                        txts = new[] { AppString.ToolBar.Type, AppString.SideBar.UnknownType };
+                        image = AppImage.NotFound;
+                        index1 = 1;
+                        index2 = 8;
+                        break;
+                    case Scenes.CustomExtension:
+                        txts = new[] { AppString.ToolBar.Type, AppString.SideBar.CustomExtension, Extension };
+                        using(Icon icon = ResourceIcon.GetExtensionIcon(Extension)) image = icon.ToBitmap();
+                        index1 = 1;
+                        index2 = 4;
+                        break;
+                    case Scenes.PerceivedType:
+                        txts = new[] { AppString.ToolBar.Type, AppString.SideBar.PerceivedType, GetPerceivedTypeName(PerceivedType) };
+                        image = AppImage.File;
+                        index1 = 1;
+                        index2 = 5;
+                        break;
+                    case Scenes.DirectoryType:
+                        txts = new[] { AppString.ToolBar.Type, AppString.SideBar.DirectoryType };
+                        image = AppImage.Directory;
+                        index1 = 1;
+                        index2 = 6;
+                        break;
+                }
+                this.Text = "[ " + string.Join(" ]  ▶  [ ", txts) + " ]";
+                this.Image = image;
+                void SwitchTab()
+                {
+                    switch(scene)
+                    {
+                        case Scenes.CustomExtension:
+                            CurrentExtension = Extension; break;
+                        case Scenes.PerceivedType:
+                            CurrentPerceivedType = PerceivedType; break;
+                    }
+                    ((MainForm)this.FindForm()).JumpItem(index1, index2);
+                };
+                btnJump.MouseDown += (sender, e) => SwitchTab();
+                this.DoubleClick += (sender, e) => SwitchTab();
+            }
+
+            readonly PictureButton btnJump = new PictureButton(AppImage.Jump);
+
+            public static string Extension = null;
+            public static string PerceivedType = null;
+            public static string TargetPath = null;
         }
     }
 }

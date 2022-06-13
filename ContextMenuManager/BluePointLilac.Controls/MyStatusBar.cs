@@ -1,4 +1,6 @@
-﻿using BluePointLilac.Methods;
+using BluePointLilac.Methods;
+using System;
+using System.ComponentModel;
 using System.Drawing;
 using System.Windows.Forms;
 
@@ -18,41 +20,50 @@ namespace BluePointLilac.Controls
             this.ForeColor = Color.White;
         }
 
-        public new string Text
-        {
-            get => base.Text;
-            set
-            {
-                if(base.Text == value) return;
-                base.Text = value; Refresh();
-            }
-        }
-        public new Font Font
-        {
-            get => base.Font;
-            set
-            {
-                if(base.Font == value) return;
-                base.Font = value; Refresh();
-            }
-        }
-        public new Color ForeColor
-        {
-            get => base.ForeColor;
-            set
-            {
-                if(base.ForeColor == value) return;
-                base.ForeColor = value; Refresh();
-            }
-        }
+        [Browsable(true), EditorBrowsable(EditorBrowsableState.Always)]
+        public override string Text { get => base.Text; set => base.Text = value; }
 
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
+            string txt = this.Text;
             int left = this.Height / 3;
-            int top = (this.Height - TextRenderer.MeasureText(this.Text, this.Font).Height) / 2;
-            e.Graphics.Clear(this.BackColor);
-            e.Graphics.DrawString(this.Text, this.Font, new SolidBrush(this.ForeColor), left, top);
+            for(int i = this.Text.Length - 1; i >= 0; i--)
+            {
+                Size size = TextRenderer.MeasureText(txt, this.Font);
+                if(size.Width < ClientSize.Width - 2 * left)
+                {
+                    using(Brush brush = new SolidBrush(this.ForeColor))
+                    {
+                        int top = (this.Height - size.Height) / 2;
+                        e.Graphics.Clear(this.BackColor);
+                        e.Graphics.DrawString(txt, this.Font, brush, left, top);
+                        break;
+                    }
+                }
+                txt = this.Text.Substring(0, i) + "...";
+            }
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e); this.Refresh();
+        }
+        protected override void OnTextChanged(EventArgs e)
+        {
+            base.OnTextChanged(e); this.Refresh();
+        }
+        protected override void OnFontChanged(EventArgs e)
+        {
+            base.OnFontChanged(e); this.Refresh();
+        }
+        protected override void OnForeColorChanged(EventArgs e)
+        {
+            base.OnForeColorChanged(e); this.Refresh();
+        }
+        protected override void OnBackColorChanged(EventArgs e)
+        {
+            base.OnBackColorChanged(e); this.Refresh();
         }
     }
 }

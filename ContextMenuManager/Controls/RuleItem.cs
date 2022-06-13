@@ -1,6 +1,7 @@
 ﻿using BluePointLilac.Controls;
 using BluePointLilac.Methods;
 using ContextMenuManager.Controls.Interfaces;
+using ContextMenuManager.Methods;
 using Microsoft.Win32;
 using System;
 using System.Drawing;
@@ -8,7 +9,7 @@ using System.Windows.Forms;
 
 namespace ContextMenuManager.Controls
 {
-    class RuleItem : MyListItem, IFoldSubItem, IBtnShowMenuItem, ITsiWebSearchItem
+    class RuleItem : FoldSubItem, IBtnShowMenuItem, ITsiWebSearchItem
     {
         public RuleItem(ItemInfo info)
         {
@@ -21,7 +22,6 @@ namespace ContextMenuManager.Controls
             this.ContextMenuStrip.Items.Add(TsiSearch);
         }
 
-        public IFoldGroupItem FoldGroupItem { get; set; }
         public WebSearchMenuItem TsiSearch { get; set; }
         public MenuButton BtnShowMenu { get; set; }
 
@@ -72,7 +72,7 @@ namespace ContextMenuManager.Controls
         private VisibleRegRuleItem(ItemInfo info) : base(info)
         {
             ChkVisible = new VisibleCheckBox(this);
-            MyToolTip.SetToolTip(ChkVisible, info.Tip);
+            ToolTipBox.SetToolTip(ChkVisible, info.Tip);
             TsiRegLocation = new RegLocationMenuItem(this);
             this.ContextMenuStrip.Items.AddRange(new ToolStripItem[] { new ToolStripSeparator(), TsiRegLocation });
         }
@@ -86,16 +86,7 @@ namespace ContextMenuManager.Controls
         public VisibleRegRuleItem(RuleAndInfo ruleAndInfo)
             : this(ruleAndInfo.Rules, ruleAndInfo.ItemInfo) { }
 
-        private RegRule[] _Rules;
-        public RegRule[] Rules
-        {
-            get => _Rules;
-            set
-            {
-                _Rules = value;
-                ChkVisible.Checked = ItemVisible;
-            }
-        }
+        public RegRule[] Rules { get; set; }
 
         public VisibleCheckBox ChkVisible { get; set; }
         public RegLocationMenuItem TsiRegLocation { get; set; }
@@ -150,7 +141,7 @@ namespace ContextMenuManager.Controls
         const string LM_SPMWE = @"HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Explorer";
         const string CU_SPMWE = @"HKEY_CURRENT_USER\Software\Policies\Microsoft\Windows\Explorer";
 
-        public static RuleAndInfo CustomFolder = new RuleAndInfo
+        public static readonly RuleAndInfo CustomFolder = new RuleAndInfo
         {
             Rules = new[] {
                 new RegRule(LM_SMWCPE, "NoCustomizeThisFolder", null, 1),
@@ -167,7 +158,7 @@ namespace ContextMenuManager.Controls
             }
         };
 
-        public static RuleAndInfo NetworkDrive = new RuleAndInfo
+        public static readonly RuleAndInfo NetworkDrive = new RuleAndInfo
         {
             Rules = new[] {
                 new RegRule(LM_SMWCPE, "NoNetConnectDisconnect", null, 1),
@@ -175,13 +166,13 @@ namespace ContextMenuManager.Controls
             },
             ItemInfo = new ItemInfo
             {
-                Text = $"{AppString.Other.MapNetworkDrive} && {AppString.Other.DisconnectNetworkDrive}",
+                Text = $"{ResourceString.GetDirectString("@AppResolver.dll,-8556")} && {ResourceString.GetDirectString("@AppResolver.dll,-8557")}",
                 Image = AppImage.NetworkDrive,
                 RestartExplorer = true
             }
         };
 
-        public static RuleAndInfo RecycleBinProperties = new RuleAndInfo
+        public static readonly RuleAndInfo RecycleBinProperties = new RuleAndInfo
         {
             Rules = new[] {
                 new RegRule(LM_SMWCPE, "NoPropertiesRecycleBin", null, 1),
@@ -189,13 +180,13 @@ namespace ContextMenuManager.Controls
             },
             ItemInfo = new ItemInfo
             {
-                Text = AppString.Other.RecycleBinProperties,
+                Text = ResourceString.GetDirectString("@AppResolver.dll,-8553"),
                 Image = AppImage.RecycleBin,
                 RestartExplorer = true
             }
         };
 
-        public static RuleAndInfo SendToDrive = new RuleAndInfo
+        public static readonly RuleAndInfo SendToDrive = new RuleAndInfo
         {
             Rules = new[] {
                 new RegRule(LM_SMWCPE, "NoDrivesInSendToMenu", null, 1),
@@ -203,14 +194,14 @@ namespace ContextMenuManager.Controls
             },
             ItemInfo = new ItemInfo
             {
-                Text = AppString.Other.RemovableDrive,
+                Text = ResourceString.GetDirectString("@shell32.dll,-9309"),
                 Image = AppImage.Drive,
                 Tip = AppString.Tip.SendToDrive,
                 RestartExplorer = true
             }
         };
 
-        public static RuleAndInfo DeferBuildSendTo = new RuleAndInfo
+        public static readonly RuleAndInfo DeferBuildSendTo = new RuleAndInfo
         {
             Rules = new[] {
                 new RegRule(LM_SMWCE, "DelaySendToMenuBuild", null, 1),
@@ -224,7 +215,7 @@ namespace ContextMenuManager.Controls
             }
         };
 
-        public static RuleAndInfo UseStoreOpenWith = new RuleAndInfo
+        public static readonly RuleAndInfo UseStoreOpenWith = new RuleAndInfo
         {
             Rules = new[] {
                 new RegRule(LM_SPMWE, "NoUseStoreOpenWith", null, 1),
@@ -232,7 +223,7 @@ namespace ContextMenuManager.Controls
             },
             ItemInfo = new ItemInfo
             {
-                Text = AppString.Other.UseStoreOpenWith,
+                Text = ResourceString.GetDirectString("@shell32.dll,-5383"),
                 Image = AppImage.MicrosoftStore
             }
         };
@@ -252,7 +243,6 @@ namespace ContextMenuManager.Controls
 
         readonly NumericUpDown NudValue = new NumericUpDown
         {
-            Font = new Font(SystemFonts.MenuFont.FontFamily, 12F),
             TextAlign = HorizontalAlignment.Center,
             Width = 80.DpiZoom()
         };
@@ -261,16 +251,25 @@ namespace ContextMenuManager.Controls
         public NumberRegRuleItem(RegRule rule, ItemInfo info) : base(info)
         {
             this.AddCtr(NudValue);
-            MyToolTip.SetToolTip(NudValue, info.Tip);
+            ToolTipBox.SetToolTip(NudValue, info.Tip);
             TsiRegLocation = new RegLocationMenuItem(this);
             this.ContextMenuStrip.Items.AddRange(new ToolStripItem[] { new ToolStripSeparator(), TsiRegLocation });
             this.Rule = rule;
             NudValue.Maximum = rule.MaxValue;
             NudValue.Minimum = rule.MinValue;
+            NudValue.Font = new Font(this.Font.FontFamily, this.Font.Size + 3F);
             NudValue.ValueChanged += (sender, e) =>
             {
-                if(NudValue.Value == Rule.DefaultValue) NudValue.ForeColor = Color.Red;
-                else NudValue.ForeColor = Color.Black;
+                if(NudValue.Value == Rule.DefaultValue)
+                {
+                    NudValue.ForeColor = Color.FromArgb(0, 138, 217);
+                    NudValue.Font = new Font(NudValue.Font, FontStyle.Bold);
+                }
+                else
+                {
+                    NudValue.ForeColor = Color.Black;
+                    NudValue.Font = new Font(NudValue.Font, FontStyle.Regular);
+                }
                 this.ItemValue = (int)NudValue.Value;
             };
             NudValue.Value = ItemValue;
@@ -294,6 +293,7 @@ namespace ContextMenuManager.Controls
             set
             {
                 Registry.SetValue(Rule.RegPath, Rule.ValueName, value, Rule.ValueKind);
+                if(RestartExplorer) ExplorerRestarter.Show();
             }
         }
     }
@@ -308,8 +308,9 @@ namespace ContextMenuManager.Controls
 
         readonly Label LblValue = new Label
         {
-            Font = new Font(SystemFonts.MenuFont.FontFamily, 12F),
             BorderStyle = BorderStyle.FixedSingle,
+            ForeColor = Color.FromArgb(80, 80, 80),
+            Cursor = Cursors.Hand,
             AutoSize = true
         };
 
@@ -318,11 +319,12 @@ namespace ContextMenuManager.Controls
         public StringRegRuleItem(RegRule rule, ItemInfo info) : base(info)
         {
             this.AddCtr(LblValue);
-            MyToolTip.SetToolTip(LblValue, info.Tip);
+            ToolTipBox.SetToolTip(LblValue, info.Tip);
             TsiRegLocation = new RegLocationMenuItem(this);
             this.ContextMenuStrip.Items.AddRange(new ToolStripItem[] { new ToolStripSeparator(), TsiRegLocation });
             this.Rule = rule;
             LblValue.Text = ItemValue;
+            LblValue.Font = new Font(this.Font.FontFamily, this.Font.Size + 3F);
             LblValue.MouseDown += (sender, e) =>
             {
                 using(InputDialog dlg = new InputDialog())
@@ -343,7 +345,11 @@ namespace ContextMenuManager.Controls
         public string ItemValue
         {
             get => Registry.GetValue(Rule.RegPath, Rule.ValueName, null)?.ToString();
-            set => Registry.SetValue(Rule.RegPath, Rule.ValueName, value);
+            set
+            {
+                Registry.SetValue(Rule.RegPath, Rule.ValueName, value);
+                if(RestartExplorer) ExplorerRestarter.Show();
+            }
         }
     }
 
@@ -362,8 +368,8 @@ namespace ContextMenuManager.Controls
         {
             this.Rule = rule;
             this.IniWriter = new IniWriter(rule.IniPath);
-            ChkVisible = new VisibleCheckBox(this) { Checked = ItemVisible };
-            MyToolTip.SetToolTip(ChkVisible, info.Tip);
+            ChkVisible = new VisibleCheckBox(this);
+            ToolTipBox.SetToolTip(ChkVisible, info.Tip);
         }
 
         public IniRule Rule { get; set; }
@@ -372,7 +378,11 @@ namespace ContextMenuManager.Controls
         public bool ItemVisible
         {
             get => IniWriter.GetValue(Rule.Section, Rule.KeyName) == Rule.TurnOnValue;
-            set => IniWriter.SetValue(Rule.Section, Rule.KeyName, value ? Rule.TurnOnValue : Rule.TurnOffValue);
+            set
+            {
+                IniWriter.SetValue(Rule.Section, Rule.KeyName, value ? Rule.TurnOnValue : Rule.TurnOffValue);
+                if(RestartExplorer) ExplorerRestarter.Show();
+            }
         }
     }
 
@@ -393,13 +403,22 @@ namespace ContextMenuManager.Controls
             this.AddCtr(NudValue);
             this.Rule = rule;
             this.IniWriter = new IniWriter(rule.IniPath);
-            MyToolTip.SetToolTip(NudValue, info.Tip);
+            ToolTipBox.SetToolTip(NudValue, info.Tip);
             NudValue.Maximum = rule.MaxValue;
             NudValue.Minimum = rule.MinValue;
+            NudValue.Font = new Font(this.Font.FontFamily, this.Font.Size + 3F);
             NudValue.ValueChanged += (sender, e) =>
             {
-                if(NudValue.Value == Rule.DefaultValue) NudValue.ForeColor = Color.Red;
-                else NudValue.ForeColor = Color.Black;
+                if(NudValue.Value == Rule.DefaultValue)
+                {
+                    NudValue.ForeColor = Color.FromArgb(0, 138, 217);
+                    NudValue.Font = new Font(NudValue.Font, FontStyle.Bold);
+                }
+                else
+                {
+                    NudValue.ForeColor = Color.Black;
+                    NudValue.Font = new Font(NudValue.Font, FontStyle.Regular);
+                }
                 this.ItemValue = (int)NudValue.Value;
             };
             NudValue.Value = ItemValue;
@@ -410,7 +429,6 @@ namespace ContextMenuManager.Controls
 
         readonly NumericUpDown NudValue = new NumericUpDown
         {
-            Font = new Font(SystemFonts.MenuFont.FontFamily, 12F),
             TextAlign = HorizontalAlignment.Center,
             Width = 80.DpiZoom()
         };
@@ -429,6 +447,7 @@ namespace ContextMenuManager.Controls
             set
             {
                 IniWriter.SetValue(Rule.Section, Rule.KeyName, value);
+                if(RestartExplorer) ExplorerRestarter.Show();
             }
         }
     }
@@ -445,8 +464,9 @@ namespace ContextMenuManager.Controls
 
         readonly Label LblValue = new Label
         {
-            Font = new Font(SystemFonts.MenuFont.FontFamily, 12F),
             BorderStyle = BorderStyle.FixedSingle,
+            ForeColor = Color.FromArgb(80, 80, 80),
+            Cursor = Cursors.Hand,
             AutoSize = true
         };
 
@@ -455,8 +475,9 @@ namespace ContextMenuManager.Controls
             this.Rule = rule;
             this.IniWriter = new IniWriter(rule.IniPath);
             this.AddCtr(LblValue);
-            MyToolTip.SetToolTip(LblValue, info.Tip);
+            ToolTipBox.SetToolTip(LblValue, info.Tip);
             LblValue.Text = ItemValue;
+            LblValue.Font = new Font(this.Font.FontFamily, this.Font.Size + 3F);
             LblValue.MouseDown += (sender, e) =>
             {
                 using(InputDialog dlg = new InputDialog())
@@ -476,7 +497,11 @@ namespace ContextMenuManager.Controls
         public string ItemValue
         {
             get => IniWriter.GetValue(Rule.Secation, Rule.KeyName);
-            set => IniWriter.SetValue(Rule.Secation, Rule.KeyName, value);
+            set
+            {
+                IniWriter.SetValue(Rule.Secation, Rule.KeyName, value);
+                if(RestartExplorer) ExplorerRestarter.Show();
+            }
         }
     }
 }

@@ -1,5 +1,6 @@
 ﻿using BluePointLilac.Controls;
 using BluePointLilac.Methods;
+using ContextMenuManager.Methods;
 using System.Windows.Forms;
 
 namespace ContextMenuManager.Controls.Interfaces
@@ -22,19 +23,19 @@ namespace ContextMenuManager.Controls.Interfaces
             };
         }
 
-        public static string ChangeText(string text)
+        private string ChangeText(string text)
         {
             using(InputDialog dlg = new InputDialog { Text = text, Title = AppString.Menu.ChangeText })
             {
                 if(dlg.ShowDialog() != DialogResult.OK) return null;
                 if(dlg.Text.Length == 0)
                 {
-                    MessageBoxEx.Show(AppString.MessageBox.TextCannotBeEmpty);
+                    AppMessageBox.Show(AppString.Message.TextCannotBeEmpty);
                     return ChangeText(text);
                 }
                 else if(ResourceString.GetDirectString(dlg.Text).Length == 0)
                 {
-                    MessageBoxEx.Show(AppString.MessageBox.StringParsingFailed);
+                    AppMessageBox.Show(AppString.Message.StringParsingFailed);
                     return ChangeText(text);
                 }
                 else return dlg.Text;

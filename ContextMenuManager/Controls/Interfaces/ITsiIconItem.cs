@@ -1,5 +1,6 @@
 ﻿using BluePointLilac.Controls;
 using BluePointLilac.Methods;
+using ContextMenuManager.Methods;
 using System.Drawing;
 using System.Windows.Forms;
 
@@ -21,28 +22,22 @@ namespace ContextMenuManager.Controls.Interfaces
         {
             this.Click += (sender, e) =>
             {
-                string iconPath = item.IconPath;
-                int iconIndex = item.IconIndex;
-                using(Icon icon = ChangeIcon(ref iconPath, ref iconIndex))
+                using(IconDialog dlg = new IconDialog())
                 {
-                    if(icon == null) return;
-                    item.IconPath = iconPath;
-                    item.IconIndex = iconIndex;
-                    item.IconLocation = $"{iconPath},{iconIndex}";
-                    item.Image = icon.ToBitmap();
+                    dlg.IconPath = item.IconPath;
+                    dlg.IconIndex = item.IconIndex;
+                    if(dlg.ShowDialog() != DialogResult.OK) return;
+                    using(Icon icon = ResourceIcon.GetIcon(dlg.IconPath, dlg.IconIndex))
+                    {
+                        Image image = icon?.ToBitmap();
+                        if(image == null) return;
+                        item.Image = image;
+                        item.IconPath = dlg.IconPath;
+                        item.IconIndex = dlg.IconIndex;
+                        item.IconLocation = $"{dlg.IconPath},{dlg.IconIndex}";
+                    }
                 }
             };
-        }
-
-        public static Icon ChangeIcon(ref string iconPath, ref int iconIndex)
-        {
-            using(IconDialog dlg = new IconDialog { IconPath = iconPath, IconIndex = iconIndex })
-            {
-                if(dlg.ShowDialog() != DialogResult.OK) return null;
-                iconPath = dlg.IconPath;
-                iconIndex = dlg.IconIndex;
-            }
-            return ResourceIcon.GetIcon(iconPath, iconIndex);
         }
     }
 }

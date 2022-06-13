@@ -1,4 +1,5 @@
 ﻿using BluePointLilac.Methods;
+using ContextMenuManager.Methods;
 using System;
 using System.IO;
 using System.Windows.Forms;
@@ -17,20 +18,29 @@ namespace ContextMenuManager.Controls.Interfaces
     {
         public RegExportMenuItem(ITsiRegExportItem item) : base(AppString.Menu.ExportRegistry)
         {
+            item.ContextMenuStrip.Opening += (sender, e) =>
+            {
+                using(var key = RegistryEx.GetRegistryKey(item.RegPath))
+                    this.Visible = key != null;
+            };
             this.Click += (sender, e) =>
             {
                 using(SaveFileDialog dlg = new SaveFileDialog())
                 {
-                    string dirPath = $@"{AppConfig.BackupDir}\{DateTime.Today.ToString("yyyy-MM-dd")}";
+                    string date = DateTime.Today.ToString("yyyy-MM-dd");
+                    string time = DateTime.Now.ToString("HH.mm.ss");
+                    string filePath = $@"{AppConfig.BackupDir}\{date}\{item.Text} - {time}.reg";
+                    string dirPath = Path.GetDirectoryName(filePath);
+                    string fileName = Path.GetFileName(filePath);
                     Directory.CreateDirectory(dirPath);
-                    dlg.FileName = item.Text;
+                    dlg.FileName = fileName;
                     dlg.InitialDirectory = dirPath;
                     dlg.Filter = $"{AppString.Dialog.RegistryFile}|*.reg";
                     if(dlg.ShowDialog() == DialogResult.OK)
                     {
-                        RegistryEx.Export(item.RegPath, dlg.FileName);
+                        ExternalProgram.ExportRegistry(item.RegPath, dlg.FileName);
                     }
-                    if(Directory.GetFiles(dirPath).Length == 0 && Directory.GetDirectories(dirPath).Length == 0)
+                    if(Directory.GetFileSystemEntries(dirPath).Length == 0)
                     {
                         Directory.Delete(dirPath);
                     }

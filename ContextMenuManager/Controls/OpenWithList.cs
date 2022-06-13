@@ -1,5 +1,6 @@
 ﻿using BluePointLilac.Controls;
 using BluePointLilac.Methods;
+using ContextMenuManager.Methods;
 using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
@@ -17,15 +18,16 @@ namespace ContextMenuManager.Controls
             this.AddNewItem();
             VisibleRegRuleItem storeItem = new VisibleRegRuleItem(VisibleRegRuleItem.UseStoreOpenWith)
             {
-                //Win8、Win8.1、Win10才有在应用商店中查找应用
-                Visible = WindowsOsVersion.ISAfterOrEqual8
+                //Win8及以上版本系统才有在应用商店中查找应用
+                Visible = WinOsVersion.Current >= WinOsVersion.Win8
             };
             this.InsertItem(storeItem, 1);
         }
 
         private void LoadOpenWithItems()
         {
-            using(RegistryKey appKey = Registry.ClassesRoot.OpenSubKey("Applications"))
+            using(RegistryKey root = Registry.ClassesRoot)
+            using(RegistryKey appKey = root.OpenSubKey("Applications"))
             {
                 foreach(string appName in appKey.GetSubKeyNames())
                 {
@@ -39,7 +41,7 @@ namespace ContextMenuManager.Controls
 
                         string keyName = names.Find(name =>
                         {
-                            using(var cmdKey = shellKey.OpenSubKey(name))
+                            using(RegistryKey cmdKey = shellKey.OpenSubKey(name))
                                 return cmdKey.GetValue("NeverDefault") == null;
                         });
                         if(keyName == null) continue;
@@ -59,7 +61,7 @@ namespace ContextMenuManager.Controls
         {
             NewItem newItem = new NewItem();
             this.InsertItem(newItem, 0);
-            newItem.AddNewItem += (sender, e) =>
+            newItem.AddNewItem += () =>
             {
                 using(NewOpenWithDialog dlg = new NewOpenWithDialog())
                 {

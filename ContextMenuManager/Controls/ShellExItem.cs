@@ -1,6 +1,6 @@
-﻿using BluePointLilac.Controls;
-using BluePointLilac.Methods;
+﻿using BluePointLilac.Methods;
 using ContextMenuManager.Controls.Interfaces;
+using ContextMenuManager.Methods;
 using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
@@ -8,8 +8,8 @@ using System.Windows.Forms;
 
 namespace ContextMenuManager.Controls
 {
-    sealed class ShellExItem : MyListItem, IChkVisibleItem, IBtnShowMenuItem, IFoldSubItem, ITsiGuidItem,
-        ITsiWebSearchItem, ITsiFilePathItem, ITsiRegPathItem, ITsiRegDeleteItem, ITsiRegExportItem
+    sealed class ShellExItem : FoldSubItem, IChkVisibleItem, IBtnShowMenuItem, ITsiGuidItem,
+        ITsiWebSearchItem, ITsiFilePathItem, ITsiRegPathItem, ITsiRegDeleteItem, ITsiRegExportItem, IProtectOpenItem
     {
         public static Dictionary<string, Guid> GetPathAndGuids(string shellExPath, bool isDragDrop = false)
         {
@@ -41,7 +41,7 @@ namespace ContextMenuManager.Controls
 
         public static readonly string[] DdhParts = { "DragDropHandlers", "-DragDropHandlers" };
         public static readonly string[] CmhParts = { "ContextMenuHandlers", "-ContextMenuHandlers" };
-        private const string LnkOpenGuid = "00021401-0000-0000-c000-000000000046";
+        public static readonly Guid LnkOpenGuid = new Guid("00021401-0000-0000-c000-000000000046");
 
         public ShellExItem(Guid guid, string regPath)
         {
@@ -59,12 +59,11 @@ namespace ContextMenuManager.Controls
                 regPath = value;
                 this.Text = this.ItemText;
                 this.Image = GuidInfo.GetImage(Guid);
-                ChkVisible.Checked = this.ItemVisible;
             }
         }
 
-        public string ValueName => null;
         public Guid Guid { get; set; }
+        public string ValueName => null;
         public string SearchText => Text;
         public string ItemFilePath => GuidInfo.GetFilePath(Guid);
         private string KeyName => RegistryEx.GetKeyName(RegPath);
@@ -73,7 +72,6 @@ namespace ContextMenuManager.Controls
         private string ParentKeyName => RegistryEx.GetKeyName(ParentPath);
         private string DefaultValue => Registry.GetValue(RegPath, "", null)?.ToString();
         public string ItemText => GuidInfo.GetText(Guid) ?? (KeyName.Equals(Guid.ToString("B"), StringComparison.OrdinalIgnoreCase) ? DefaultValue : KeyName);
-        private bool IsOpenLnkItem => Guid.ToString() == LnkOpenGuid;
         public bool IsDragDropItem => ParentKeyName.EndsWith(DdhParts[0], StringComparison.OrdinalIgnoreCase);
 
         private string BackupPath
@@ -94,29 +92,28 @@ namespace ContextMenuManager.Controls
             }
             set
             {
-                if(!value && TryProtectOpenItem()) return;
                 try
                 {
                     RegistryEx.MoveTo(RegPath, BackupPath);
                 }
                 catch
                 {
-                    MessageBoxEx.Show(AppString.MessageBox.AuthorityProtection);
+                    AppMessageBox.Show(AppString.Message.AuthorityProtection);
                     return;
                 }
                 RegPath = BackupPath;
             }
         }
 
-        public VisibleCheckBox ChkVisible { get; set; }
         public MenuButton BtnShowMenu { get; set; }
+        public VisibleCheckBox ChkVisible { get; set; }
+        public DetailedEditButton BtnDetailedEdit { get; set; }
         public WebSearchMenuItem TsiSearch { get; set; }
         public FilePropertiesMenuItem TsiFileProperties { get; set; }
         public FileLocationMenuItem TsiFileLocation { get; set; }
         public RegLocationMenuItem TsiRegLocation { get; set; }
         public DeleteMeMenuItem TsiDeleteMe { get; set; }
         public RegExportMenuItem TsiRegExport { get; set; }
-        public IFoldGroupItem FoldGroupItem { get; set; }
         public HandleGuidMenuItem TsiHandleGuid { get; set; }
 
         readonly ToolStripMenuItem TsiDetails = new ToolStripMenuItem(AppString.Menu.Details);
@@ -125,13 +122,14 @@ namespace ContextMenuManager.Controls
         {
             BtnShowMenu = new MenuButton(this);
             ChkVisible = new VisibleCheckBox(this);
+            BtnDetailedEdit = new DetailedEditButton(this);
+            TsiHandleGuid = new HandleGuidMenuItem(this);
             TsiSearch = new WebSearchMenuItem(this);
             TsiFileLocation = new FileLocationMenuItem(this);
             TsiFileProperties = new FilePropertiesMenuItem(this);
             TsiRegLocation = new RegLocationMenuItem(this);
             TsiRegExport = new RegExportMenuItem(this);
             TsiDeleteMe = new DeleteMeMenuItem(this);
-            TsiHandleGuid = new HandleGuidMenuItem(this, true);
 
             ContextMenuStrip.Items.AddRange(new ToolStripItem[] { TsiHandleGuid, new ToolStripSeparator(),
                 TsiDetails, new ToolStripSeparator(), TsiDeleteMe });
@@ -139,29 +137,20 @@ namespace ContextMenuManager.Controls
             TsiDetails.DropDownItems.AddRange(new ToolStripItem[] { TsiSearch, new ToolStripSeparator(),
                 TsiFileProperties, TsiFileLocation, TsiRegLocation, TsiRegExport});
 
-            ContextMenuStrip.Opening += (sender, e) => TsiDeleteMe.Enabled = !(IsOpenLnkItem && AppConfig.ProtectOpenItem);
+            ContextMenuStrip.Opening += (sender, e) => TsiDeleteMe.Enabled = !(Guid.Equals(LnkOpenGuid) && AppConfig.ProtectOpenItem);
+            ChkVisible.PreCheckChanging += TryProtectOpenItem;
         }
 
-        private bool TryProtectOpenItem()
+        public bool TryProtectOpenItem()
         {
-            if(!IsOpenLnkItem) return false;
-            if(!AppConfig.ProtectOpenItem) return false;
-            return MessageBoxEx.Show(AppString.MessageBox.PromptIsOpenItem, MessageBoxButtons.YesNo) != DialogResult.Yes;
+            if(!ChkVisible.Checked || !Guid.Equals(LnkOpenGuid) || !AppConfig.ProtectOpenItem) return true;
+            return AppMessageBox.Show(AppString.Message.PromptIsOpenItem, MessageBoxButtons.YesNo) == DialogResult.Yes;
         }
 
         public void DeleteMe()
         {
-            try
-            {
-                RegistryEx.DeleteKeyTree(this.RegPath, true);
-                RegistryEx.DeleteKeyTree(this.BackupPath);
-            }
-            catch
-            {
-                MessageBoxEx.Show(AppString.MessageBox.AuthorityProtection);
-                return;
-            }
-            this.Dispose();
+            RegistryEx.DeleteKeyTree(this.RegPath, true);
+            RegistryEx.DeleteKeyTree(this.BackupPath);
         }
     }
 }

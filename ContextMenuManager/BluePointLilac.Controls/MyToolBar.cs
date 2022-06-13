@@ -22,10 +22,18 @@ namespace BluePointLilac.Controls
             set
             {
                 if(selectedButton == value) return;
-                if(selectedButton != null) selectedButton.Opacity = 0;
+                if(selectedButton != null)
+                {
+                    selectedButton.Opacity = 0;
+                    selectedButton.Cursor = Cursors.Hand;
+                }
                 selectedButton = value;
-                value.Opacity = 0.4F;
-                SelectedButtonChanged?.Invoke(null, null);
+                if(selectedButton != null)
+                {
+                    selectedButton.Opacity = 0.4F;
+                    selectedButton.Cursor = Cursors.Default;
+                }
+                SelectedButtonChanged?.Invoke(this, null);
             }
         }
 
@@ -33,31 +41,43 @@ namespace BluePointLilac.Controls
 
         public int SelectedIndex
         {
-            get => Controls.GetChildIndex(SelectedButton);
-            set => SelectedButton = (MyToolBarButton)Controls[value];
+            get
+            {
+                if(SelectedButton == null) return -1;
+                else return Controls.GetChildIndex(SelectedButton);
+            }
+            set
+            {
+                if(value < 0 || value >= this.Controls.Count) SelectedButton = null;
+                else SelectedButton = (MyToolBarButton)Controls[value];
+            }
         }
 
         public void AddButton(MyToolBarButton button)
         {
+            this.SuspendLayout();
             button.Parent = this;
-            button.Margin = new Padding(12.DpiZoom(), 4.DpiZoom(), 0, 0);
+            button.Margin = new Padding(12, 4, 0, 0).DpiZoom();
             button.MouseDown += (sender, e) =>
             {
-                if(button.CanBeSelected) { SelectedButton = button; button.Cursor = Cursors.Default; }
+                if(e.Button == MouseButtons.Left && button.CanBeSelected) SelectedButton = button;
             };
             button.MouseEnter += (sender, e) =>
             {
-                if(button != SelectedButton) { button.Opacity = 0.2F; button.Cursor = Cursors.Hand; }
+                if(button != SelectedButton) button.Opacity = 0.2F;
             };
             button.MouseLeave += (sender, e) =>
             {
                 if(button != SelectedButton) button.Opacity = 0;
             };
+            this.ResumeLayout();
         }
 
         public void AddButtons(MyToolBarButton[] buttons)
         {
-            Array.ForEach(buttons, button => AddButton(button));
+            int maxWidth = 72.DpiZoom();
+            Array.ForEach(buttons, button => maxWidth = Math.Max(maxWidth, TextRenderer.MeasureText(button.Text, button.Font).Width));
+            Array.ForEach(buttons, button => { button.Width = maxWidth; AddButton(button); });
         }
     }
 
@@ -65,17 +85,18 @@ namespace BluePointLilac.Controls
     {
         public MyToolBarButton(Image image, string text)
         {
+            this.SuspendLayout();
             this.DoubleBuffered = true;
+            this.Cursor = Cursors.Hand;
             this.Size = new Size(72, 72).DpiZoom();
             this.Controls.AddRange(new Control[] { picImage, lblText });
-            picImage.Location = new Point(16, 6).DpiZoom();
+            lblText.Resize += (sender, e) => this.OnResize(null);
+            picImage.Top = 6.DpiZoom();
             lblText.Top = 52.DpiZoom();
-            lblText.Resize += (sender, e) => lblText.Left = (Width - lblText.Width) / 2;
+            lblText.SetEnabled(false);
             this.Image = image;
             this.Text = text;
-            this.CanBeSelected = true;
-            MyToolTip.SetToolTip(this, text);
-            lblText.SetEnabled(false);
+            this.ResumeLayout();
         }
 
         readonly PictureBox picImage = new PictureBox
@@ -88,10 +109,10 @@ namespace BluePointLilac.Controls
 
         readonly Label lblText = new Label
         {
-            AutoSize = true,
-            Font = SystemFonts.MenuFont,
             BackColor = Color.Transparent,
-            ForeColor = Color.White
+            Font = SystemFonts.MenuFont,
+            ForeColor = Color.White,
+            AutoSize = true,
         };
 
         public Image Image
@@ -109,11 +130,13 @@ namespace BluePointLilac.Controls
             get => BackColor.A / 255;
             set => BackColor = Color.FromArgb((int)(value * 255), Color.White);
         }
-        public bool CanBeSelected { get; set; }
+        public bool CanBeSelected { get; set; } = true;
 
-        protected override void OnMouseDown(MouseEventArgs e)
+        protected override void OnResize(EventArgs e)
         {
-            if(e.Button == MouseButtons.Left) base.OnMouseDown(e);
+            base.OnResize(e);
+            lblText.Left = (this.Width - lblText.Width) / 2;
+            picImage.Left = (this.Width - picImage.Width) / 2;
         }
     }
 }

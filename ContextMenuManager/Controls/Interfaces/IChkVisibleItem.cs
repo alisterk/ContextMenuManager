@@ -1,5 +1,5 @@
 ﻿using BluePointLilac.Controls;
-using System.Windows.Forms;
+using ContextMenuManager.Methods;
 
 namespace ContextMenuManager.Controls.Interfaces
 {
@@ -13,14 +13,17 @@ namespace ContextMenuManager.Controls.Interfaces
     {
         public VisibleCheckBox(IChkVisibleItem item)
         {
-            ((MyListItem)item).AddCtr(this);
-            this.MouseDown += (sender, e) =>
+            MyListItem listItem = (MyListItem)item;
+            listItem.AddCtr(this);
+            this.CheckChanged += () => item.ItemVisible = this.Checked;
+            listItem.ParentChanged += (sender, e) =>
             {
-                if(e.Button == MouseButtons.Left)
-                {
-                    item.ItemVisible = !this.Checked;
-                    this.Checked = item.ItemVisible;
-                }
+                if(listItem.IsDisposed) return;
+                if(listItem.Parent == null) return;
+                this.Checked = item.ItemVisible;
+                if(listItem is FoldSubItem subItem && subItem.FoldGroupItem != null) return;
+                if(listItem.FindForm() is ShellStoreDialog.ShellStoreForm) return;
+                if(AppConfig.HideDisabledItems) listItem.Visible = this.Checked;
             };
         }
     }

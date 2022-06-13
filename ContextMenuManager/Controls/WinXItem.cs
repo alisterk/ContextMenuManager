@@ -1,20 +1,22 @@
 ﻿using BluePointLilac.Controls;
 using BluePointLilac.Methods;
 using ContextMenuManager.Controls.Interfaces;
+using ContextMenuManager.Methods;
 using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
 
 namespace ContextMenuManager.Controls
 {
-    sealed class WinXItem : MyListItem, IChkVisibleItem, IBtnShowMenuItem, IBtnMoveUpDownItem, ITsiAdministratorItem,
-        ITsiTextItem, ITsiWebSearchItem, ITsiFilePathItem, ITsiDeleteItem, IFoldSubItem, ITsiShortcutCommandItem
+    sealed class WinXItem : FoldSubItem, IChkVisibleItem, IBtnShowMenuItem, IBtnMoveUpDownItem, ITsiAdministratorItem,
+        ITsiTextItem, ITsiWebSearchItem, ITsiFilePathItem, ITsiDeleteItem, ITsiShortcutCommandItem
     {
-        public WinXItem(string filePath, IFoldGroupItem group)
+        public WinXItem(string filePath, FoldGroupItem group)
         {
             InitializeComponents();
             this.FoldGroupItem = group;
             this.FilePath = filePath;
+            this.Indent();
         }
 
         private string filePath;
@@ -24,10 +26,9 @@ namespace ContextMenuManager.Controls
             set
             {
                 filePath = value;
-                this.Shortcut = new WshShortcut(value);
+                this.ShellLink = new ShellLink(value);
                 this.Text = this.ItemText;
-                this.Image = this.ItemIcon.ToBitmap();
-                ChkVisible.Checked = this.ItemVisible;
+                this.Image = this.ItemImage;
             }
         }
 
@@ -35,15 +36,16 @@ namespace ContextMenuManager.Controls
         {
             get
             {
-                string name = Shortcut.Description?.Trim();
+                string name = ShellLink.Description?.Trim();
                 if(name.IsNullOrWhiteSpace()) name = DesktopIni.GetLocalizedFileNames(FilePath, true);
                 if(name == string.Empty) name = Path.GetFileNameWithoutExtension(FilePath);
                 return name;
             }
             set
             {
-                Shortcut.Description = value;
-                Shortcut.Save();
+                ShellLink.Description = value;
+                ShellLink.Save();
+                DesktopIni.SetLocalizedFileNames(FilePath, value);
                 this.Text = ResourceString.GetDirectString(value);
                 ExplorerRestarter.Show();
             }
@@ -66,7 +68,11 @@ namespace ContextMenuManager.Controls
         {
             get
             {
-                Icon icon = ResourceIcon.GetIcon(Shortcut.IconLocation);
+                ShellLink.ICONLOCATION iconLocation = ShellLink.IconLocation;
+                string iconPath = iconLocation.IconPath;
+                int iconIndex = iconLocation.IconIndex;
+                if(string.IsNullOrEmpty(iconPath)) iconPath = FilePath;
+                Icon icon = ResourceIcon.GetIcon(iconPath, iconIndex);
                 if(icon == null)
                 {
                     string path = ItemFilePath;
@@ -81,17 +87,17 @@ namespace ContextMenuManager.Controls
         {
             get
             {
-                string path = Shortcut.TargetPath;
+                string path = ShellLink.TargetPath;
                 if(!File.Exists(path) && !Directory.Exists(path)) path = FilePath;
                 return path;
             }
         }
 
-        public WshShortcut Shortcut { get; private set; }
+        public ShellLink ShellLink { get; private set; }
         public string SearchText => $"{AppString.SideBar.WinX} {Text}";
         private string FileName => Path.GetFileName(FilePath);
+        private Image ItemImage => ItemIcon?.ToBitmap() ?? AppImage.NotFound;
 
-        public IFoldGroupItem FoldGroupItem { get; set; }
         public VisibleCheckBox ChkVisible { get; set; }
         public MenuButton BtnShowMenu { get; set; }
         public ChangeTextMenuItem TsiChangeText { get; set; }
@@ -106,7 +112,6 @@ namespace ContextMenuManager.Controls
 
         readonly ToolStripMenuItem TsiDetails = new ToolStripMenuItem(AppString.Menu.Details);
         readonly ToolStripMenuItem TsiChangeGroup = new ToolStripMenuItem(AppString.Menu.ChangeGroup);
-
 
         private void InitializeComponents()
         {
@@ -132,17 +137,13 @@ namespace ContextMenuManager.Controls
             TsiChangeGroup.Click += (sender, e) => ChangeGroup();
             BtnMoveDown.MouseDown += (sender, e) => MoveItem(false);
             BtnMoveUp.MouseDown += (sender, e) => MoveItem(true);
-            TsiAdministrator.Click += (sender, e) =>
-            {
-                WinXList.HashLnk(this.FilePath);
-                ExplorerRestarter.Show();
-            };
             TsiChangeCommand.Click += (sender, e) =>
             {
-                if(TsiChangeCommand.ChangeCommand(Shortcut))
+                if(TsiChangeCommand.ChangeCommand(ShellLink))
                 {
-                    Image = ItemIcon.ToBitmap();
-                    WinXList.HashLnk(this.FilePath);
+                    Image = this.ItemImage;
+                    WinXHasher.HashLnk(FilePath);
+                    ExplorerRestarter.Show();
                 }
             };
         }
@@ -221,8 +222,7 @@ namespace ContextMenuManager.Controls
             File.Delete(FilePath);
             DesktopIni.DeleteLocalizedFileNames(FilePath);
             ExplorerRestarter.Show();
-            this.Shortcut.Dispose();
-            this.Dispose();
+            this.ShellLink.Dispose();
         }
     }
 }
